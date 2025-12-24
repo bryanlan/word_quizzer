@@ -20,6 +20,7 @@ dependencies:
   file_picker: ^10.3.8
   shared_preferences: ^2.2.2
   http: ^1.2.2
+  sqflite_common_ffi_web: ^1.1.0
 
 dev_dependencies:
   flutter_test:

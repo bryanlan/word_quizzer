@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'dart:math';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
+import 'db_import.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -42,6 +42,9 @@ class DatabaseHelper {
   }
 
   Future<void> importDatabase(String sourcePath) async {
+    if (!supportsDatabaseFileImport) {
+      throw UnsupportedError('Database import is not supported on web.');
+    }
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'vocab_master.db');
 
@@ -51,9 +54,7 @@ class DatabaseHelper {
       _database = null;
     }
 
-    // Copy file
-    File source = File(sourcePath);
-    await source.copy(path);
+    await importDatabaseFile(sourcePath, path);
 
     _database = await _initDB('vocab_master.db');
     await _ensureOnDeckStatusSchema(_database!);

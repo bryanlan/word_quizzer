@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
+import 'db_factory.dart';
 
 void main() {
+  configureDatabaseFactory();
   runApp(const MyApp());
 }
 

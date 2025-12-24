@@ -7,6 +7,7 @@ import 'stats_screen.dart';
 import 'word_list_screen.dart';
 import 'add_word_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'db_import.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -75,10 +76,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _importDb() async {
+    if (!supportsDatabaseFileImport) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Import Unavailable"),
+          content: const Text(
+            "Database import isn't supported in the web app yet. "
+            "Use the desktop app to import, or add words manually.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     FilePickerResult? result = await FilePicker.platform.pickFiles();
 
     if (result != null) {
-      String filePath = result.files.single.path!;
+      final filePath = result.files.single.path;
+      if (filePath == null || filePath.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to read selected file.')),
+        );
+        return;
+      }
       try {
         await DatabaseHelper.instance.importDatabase(filePath);
         ScaffoldMessenger.of(context).showSnackBar(
