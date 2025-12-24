@@ -668,6 +668,51 @@ class DatabaseHelper {
     }).toList();
   }
 
+  Future<List<WordStats>> getAllWordsWithStats() async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return [];
+    }
+
+    final hasStudyLog = await _hasTable(db, 'study_log');
+    if (!hasStudyLog) {
+      final rows = await db.query(
+        'words',
+        columns: ['id', 'word_stem', 'definition', 'original_context', 'status'],
+        orderBy: 'word_stem COLLATE NOCASE',
+      );
+      return rows
+          .map((row) => WordStats.fromMap({
+                ...row,
+                'total_attempts': 0,
+                'correct_attempts': 0,
+              }))
+          .toList();
+    }
+
+    final rows = await db.rawQuery('''
+      SELECT 
+        w.id,
+        w.word_stem,
+        w.definition,
+        w.original_context,
+        w.status,
+        COUNT(l.id) as total_attempts,
+        SUM(CASE WHEN l.result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+      FROM words w
+      LEFT JOIN study_log l ON l.word_id = w.id
+      GROUP BY w.id
+      ORDER BY w.word_stem COLLATE NOCASE
+    ''');
+
+    return rows.map((row) {
+      final normalized = Map<String, dynamic>.from(row);
+      normalized['total_attempts'] = normalized['total_attempts'] ?? 0;
+      normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
+      return WordStats.fromMap(normalized);
+    }).toList();
+  }
+
   Future<List<QuizWordReport>> getQuizReportData(List<int> wordIds) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -720,6 +765,92 @@ class DatabaseHelper {
       normalized['status_correct_streak'] = normalized['status_correct_streak'] ?? 0;
       return QuizWordReport.fromMap(normalized);
     }).toList();
+  }
+
+  Future<bool> wordExists(String wordStem) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return false;
+    }
+
+    final rows = await db.query(
+      'words',
+      columns: ['id'],
+      where: 'LOWER(word_stem) = ?',
+      whereArgs: [wordStem.toLowerCase()],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<int?> addWordWithEnrichment({
+    required String wordStem,
+    required String status,
+    required int priorityTier,
+    required String definition,
+    required List<String> examples,
+    required List<String> distractors,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return null;
+    }
+
+    final existing = await db.query(
+      'words',
+      columns: ['id'],
+      where: 'LOWER(word_stem) = ?',
+      whereArgs: [wordStem.toLowerCase()],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      return null;
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final wordId = await db.transaction<int>((txn) async {
+      final id = await txn.insert('words', {
+        'word_stem': wordStem,
+        'definition': definition,
+        'status': status,
+        'priority_tier': priorityTier,
+        'difficulty_score': 0,
+        'bucket_date': now,
+        'next_review_date': _nextReviewDateForStatus(status),
+        'status_correct_streak': 0,
+        'manual_flag': 1,
+      });
+
+      for (final example in examples) {
+        final trimmed = example.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+        await txn.insert('examples', {
+          'word_id': id,
+          'sentence': trimmed,
+        });
+      }
+
+      for (final distractor in distractors) {
+        final trimmed = distractor.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+        await txn.insert('distractors', {
+          'word_id': id,
+          'text': trimmed,
+        });
+      }
+
+      return id;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
+    await _promoteOnDeckToLearning(db, activeLearningLimit);
+
+    return wordId;
   }
 
   Future<DailyQuizReport> getDailyReport(String day) async {

@@ -28,7 +28,9 @@ class _WordListScreenState extends State<WordListScreen> {
   }
 
   Future<void> _loadWords() async {
-    final data = await DatabaseHelper.instance.getWordsWithStats(widget.status);
+    final data = widget.status == "All"
+        ? await DatabaseHelper.instance.getAllWordsWithStats()
+        : await DatabaseHelper.instance.getWordsWithStats(widget.status);
     setState(() {
       words = data;
       isLoading = false;
@@ -38,11 +40,12 @@ class _WordListScreenState extends State<WordListScreen> {
   String _statsText(WordStats stats) {
     final total = stats.totalAttempts;
     final correct = stats.correctAttempts;
+    final statusLabel = widget.status == "All" ? "${stats.status} • " : "";
     if (total == 0) {
-      return "Tested 0 • NA correct";
+      return "${statusLabel}Tested 0 • NA correct";
     }
     final percent = ((correct / total) * 100).round();
-    return "Tested $total • $percent% correct";
+    return "${statusLabel}Tested $total • $percent% correct";
   }
 
   @override

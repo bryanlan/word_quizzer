@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/services.dart';
 import 'db_helper.dart';
 import 'quiz_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 import 'word_list_screen.dart';
+import 'add_word_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,8 +16,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const MethodChannel _userChannel =
-      MethodChannel('com.example.vocab_master/user');
   Map<String, dynamic> stats = {
     'total': 0,
     'learned': 0,
@@ -28,12 +27,14 @@ class _HomeScreenState extends State<HomeScreen> {
   };
   bool isLoading = true;
   String displayName = "Scholar";
+  String apiKey = '';
 
   @override
   void initState() {
     super.initState();
     _refreshStats();
     _loadDisplayName();
+    _loadApiKey();
   }
 
   Future<void> _refreshStats() async {
@@ -45,18 +46,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadDisplayName() async {
-    try {
-      final result = await _userChannel.invokeMethod<String>('getUserName');
-      final trimmed = (result ?? "").trim();
-      if (trimmed.isNotEmpty && trimmed.toLowerCase() != "owner") {
-        if (!mounted) return;
-        setState(() {
-          displayName = trimmed;
-        });
-      }
-    } catch (_) {
-      // Keep default if the platform does not provide a name.
-    }
+    final prefs = await SharedPreferences.getInstance();
+    final name = (prefs.getString('display_name') ?? '').trim();
+    setState(() {
+      displayName = name.isEmpty ? "Scholar" : name;
+    });
+  }
+
+  Future<void> _loadApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      apiKey = prefs.getString('openrouter_api_key') ?? '';
+    });
   }
 
   String _timeOfDayLabel() {
@@ -96,6 +97,39 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text("Vocab Master"),
         actions: [
           IconButton(
+            icon: Icon(
+              Icons.add,
+              color: apiKey.trim().isEmpty ? Colors.grey : null,
+            ),
+            onPressed: () {
+              if (apiKey.trim().isEmpty) {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text("OpenRouter Key Required"),
+                    content: const Text(
+                      "Add your OpenRouter API key in Settings to create new words.",
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text("OK"),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AddWordScreen(apiKey: apiKey),
+                ),
+              ).then((_) => _refreshStats());
+            },
+            tooltip: 'Add Word',
+          ),
+          IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () {
                Navigator.push(
@@ -111,7 +145,10 @@ class _HomeScreenState extends State<HomeScreen> {
                Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
+              ).then((_) {
+                _loadApiKey();
+                _loadDisplayName();
+              });
             },
             tooltip: 'Settings',
           ),
@@ -136,7 +173,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 20),
                   Row(
                     children: [
-                      _buildStatCard("Total Words", stats['total'].toString(), Colors.blueAccent),
+                      _buildStatCard(
+                        "Total Words",
+                        stats['total'].toString(),
+                        Colors.blueAccent,
+                        onTap: () => _openWordList("All"),
+                      ),
                       const SizedBox(width: 10),
                       _buildStatCard(
                         "On Deck",

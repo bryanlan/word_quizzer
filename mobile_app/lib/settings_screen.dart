@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'openrouter_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,6 +19,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int promoteLearning = 3;
   int promoteProficient = 4;
   int promoteAdept = 5;
+  bool showApiKey = false;
+  final TextEditingController apiKeyController = TextEditingController();
+  final TextEditingController displayNameController = TextEditingController();
+  bool isTestingKey = false;
 
   @override
   void initState() {
@@ -37,6 +42,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       promoteLearning = prefs.getInt('promote_learning_correct') ?? 3;
       promoteProficient = prefs.getInt('promote_proficient_correct') ?? 4;
       promoteAdept = prefs.getInt('promote_adept_correct') ?? 5;
+      apiKeyController.text = prefs.getString('openrouter_api_key') ?? '';
+      displayNameController.text = prefs.getString('display_name') ?? '';
     });
   }
 
@@ -53,8 +60,96 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setInt(key, value);
   }
 
+  Future<void> _saveApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = apiKeyController.text.trim();
+    await prefs.setString('openrouter_api_key', trimmed);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('OpenRouter key saved.')),
+    );
+  }
+
+  Future<void> _clearApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('openrouter_api_key');
+    setState(() {
+      apiKeyController.text = '';
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('OpenRouter key cleared.')),
+    );
+  }
+
+  Future<void> _saveDisplayName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = displayNameController.text.trim();
+    await prefs.setString('display_name', trimmed);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Display name saved.')),
+    );
+  }
+
+  Future<void> _clearDisplayName() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('display_name');
+    setState(() {
+      displayNameController.text = '';
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Display name cleared.')),
+    );
+  }
+
+  Future<void> _testApiKey() async {
+    final key = apiKeyController.text.trim();
+    if (key.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter an OpenRouter key first.')),
+      );
+      return;
+    }
+    setState(() {
+      isTestingKey = true;
+    });
+    try {
+      final service = OpenRouterService(key);
+      await service.testKey();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('OpenRouter key is valid.')),
+      );
+    } on InvalidApiKeyException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid OpenRouter API key.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Key test failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isTestingKey = false;
+        });
+      }
+    }
+  }
+
   int _totalPercent() {
     return pctLearning + pctProficient + pctAdept + pctMastered;
+  }
+
+  @override
+  void dispose() {
+    apiKeyController.dispose();
+    displayNameController.dispose();
+    super.dispose();
   }
 
   @override
@@ -223,6 +318,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _saveSetting('promote_adept_correct', value);
                 setState(() => promoteAdept = value);
               },
+            ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 24),
+            const Text(
+              "Display Name",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Shown in the greeting on the home screen.",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: displayNameController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: "Scholar",
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _saveDisplayName,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text("Save Name"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _clearDisplayName,
+                    child: const Text("Clear Name"),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 24),
+            const Text(
+              "OpenRouter API Key",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Used to generate definitions, examples, and distractors on-device.",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: apiKeyController,
+              obscureText: !showApiKey,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: "sk-or-...",
+                suffixIcon: IconButton(
+                  icon: Icon(showApiKey ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () {
+                    setState(() {
+                      showApiKey = !showApiKey;
+                    });
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _saveApiKey,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text("Save Key"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _clearApiKey,
+                    child: const Text("Clear Key"),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: isTestingKey ? null : _testApiKey,
+                child: isTestingKey
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text("Test Key"),
+              ),
             ),
             ],
           ),
