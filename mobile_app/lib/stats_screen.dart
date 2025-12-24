@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'db_helper.dart';
 import 'package:intl/intl.dart';
 import 'daily_report_screen.dart';
+import 'models.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -15,12 +16,41 @@ class _StatsScreenState extends State<StatsScreen> {
   bool isLoading = true;
   List<Map<String, dynamic>> troublesomeWords = [];
   List<BarChartGroupData> chartData = [];
+  List<WeekOption> weekOptions = [];
+  WeekOption? selectedWeek;
   int maxQuizCount = 0;
+  WeeklyAnalytics weeklyAnalytics = WeeklyAnalytics(
+    activity: [],
+    totalQuizzes: 0,
+    totalDays: 0,
+    totalWords: 0,
+    totalAttempts: 0,
+    correctAttempts: 0,
+    promotions: const {},
+    difficultyCounts: const {},
+  );
 
   @override
   void initState() {
     super.initState();
+    _initWeeks();
     _loadStats();
+  }
+
+  void _initWeeks() {
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    weekOptions = List.generate(8, (index) {
+      final start = DateTime(
+        startOfWeek.year,
+        startOfWeek.month,
+        startOfWeek.day,
+      ).subtract(Duration(days: 7 * index));
+      final end = start.add(const Duration(days: 6));
+      final label = "${DateFormat('MMM d').format(start)} - ${DateFormat('MMM d').format(end)}";
+      return WeekOption(start: start, label: label);
+    });
+    selectedWeek = weekOptions.first;
   }
 
   Future<void> _loadStats() async {
@@ -29,7 +59,7 @@ class _StatsScreenState extends State<StatsScreen> {
     if (!hasWords) {
       setState(() {
         troublesomeWords = [];
-        chartData = _buildChartGroups([]);
+        chartData = _buildChartGroups([], DateTime.now());
         maxQuizCount = 0;
         isLoading = false;
       });
@@ -53,32 +83,32 @@ class _StatsScreenState extends State<StatsScreen> {
       ''');
     }
 
-    // 2. Get Last 7 Days Activity
-    List<Map<String, dynamic>> activity = [];
-    if (hasStudyLog) {
-      activity = await db.rawQuery('''
-        SELECT
-          DATE(timestamp) as day,
-          COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-        FROM study_log
-        WHERE timestamp >= DATE('now', '-7 days')
-        GROUP BY day
-        ORDER BY day ASC
-      ''');
+    WeeklyAnalytics analytics = WeeklyAnalytics(
+      activity: [],
+      totalQuizzes: 0,
+      totalDays: 0,
+      totalWords: 0,
+      totalAttempts: 0,
+      correctAttempts: 0,
+      promotions: const {},
+      difficultyCounts: const {},
+    );
+    if (hasStudyLog && selectedWeek != null) {
+      analytics = await DatabaseHelper.instance.getWeeklyAnalytics(selectedWeek!.start);
     }
 
     setState(() {
       troublesomeWords = badWords;
-      chartData = _buildChartGroups(activity);
-      maxQuizCount = _maxQuizCount(activity);
+      weeklyAnalytics = analytics;
+      chartData = _buildChartGroups(analytics.activity, selectedWeek?.start ?? DateTime.now());
+      maxQuizCount = _maxQuizCount(analytics.activity);
       isLoading = false;
     });
   }
 
-  List<BarChartGroupData> _buildChartGroups(List<Map<String, dynamic>> data) {
-    // Map dates to 0-6
+  List<BarChartGroupData> _buildChartGroups(List<Map<String, dynamic>> data, DateTime weekStart) {
     return List.generate(7, (index) {
-      final date = DateTime.now().subtract(Duration(days: 6 - index));
+      final date = weekStart.add(Duration(days: index));
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       
       final dayData = data.firstWhere((element) => element['day'] == dateStr, orElse: () => {'count': 0});
@@ -119,8 +149,42 @@ class _StatsScreenState extends State<StatsScreen> {
     return interval.toDouble();
   }
 
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDistributionChips(Map<String, int> counts) {
+    if (counts.isEmpty) {
+      return const Text("No data yet.", style: TextStyle(color: Colors.grey));
+    }
+    final entries = counts.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: entries
+          .map((entry) => Chip(label: Text("${entry.key}: ${entry.value}")))
+          .toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final totalAttempts = weeklyAnalytics.totalAttempts;
+    final correctAttempts = weeklyAnalytics.correctAttempts;
+    final accuracy = totalAttempts > 0
+        ? ((correctAttempts / totalAttempts) * 100).round()
+        : 0;
+
     return Scaffold(
       appBar: AppBar(title: const Text("Analytics")),
       body: isLoading
@@ -131,6 +195,29 @@ class _StatsScreenState extends State<StatsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionTitle("Activity (Quizzes per Day)"),
+                  if (selectedWeek != null)
+                    DropdownButtonFormField<WeekOption>(
+                      value: selectedWeek,
+                      items: weekOptions
+                          .map((option) => DropdownMenuItem(
+                                value: option,
+                                child: Text(option.label),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() {
+                          selectedWeek = value;
+                          isLoading = true;
+                        });
+                        _loadStats();
+                      },
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
                   SizedBox(
                     height: 200,
                     child: BarChart(
@@ -152,8 +239,8 @@ class _StatsScreenState extends State<StatsScreen> {
                           touchTooltipData: BarTouchTooltipData(
                             tooltipBgColor: Colors.black87,
                             getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                              final date = DateTime.now()
-                                  .subtract(Duration(days: 6 - group.x));
+                              final base = selectedWeek?.start ?? DateTime.now();
+                              final date = base.add(Duration(days: group.x));
                               final label = DateFormat('EEE').format(date);
                               return BarTooltipItem(
                                 "$label\n${rod.toY.toInt()} quizzes",
@@ -166,8 +253,8 @@ class _StatsScreenState extends State<StatsScreen> {
                               return;
                             }
                             final index = response!.spot!.touchedBarGroupIndex;
-                            final date = DateTime.now()
-                                .subtract(Duration(days: 6 - index));
+                            final base = selectedWeek?.start ?? DateTime.now();
+                            final date = base.add(Duration(days: index));
                             final day = DateFormat('yyyy-MM-dd').format(date);
                             Navigator.push(
                               context,
@@ -182,7 +269,8 @@ class _StatsScreenState extends State<StatsScreen> {
                             sideTitles: SideTitles(
                               showTitles: true,
                               getTitlesWidget: (value, meta) {
-                                final date = DateTime.now().subtract(Duration(days: 6 - value.toInt()));
+                                final base = selectedWeek?.start ?? DateTime.now();
+                                final date = base.add(Duration(days: value.toInt()));
                                 return Text(DateFormat('E').format(date).substring(0, 1));
                               },
                             ),
@@ -207,6 +295,29 @@ class _StatsScreenState extends State<StatsScreen> {
                     ),
                   ),
                   const SizedBox(height: 40),
+                  _buildSectionTitle("Weekly Summary"),
+                  _buildSummaryRow("Total Quizzes", weeklyAnalytics.totalQuizzes.toString()),
+                  _buildSummaryRow("Days With Quizzes", weeklyAnalytics.totalDays.toString()),
+                  _buildSummaryRow("Words Reviewed", weeklyAnalytics.totalWords.toString()),
+                  _buildSummaryRow("Accuracy", "$accuracy%"),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle("Promotions"),
+                  _buildSummaryRow(
+                    "Learning → Proficient",
+                    (weeklyAnalytics.promotions['Learning→Proficient'] ?? 0).toString(),
+                  ),
+                  _buildSummaryRow(
+                    "Proficient → Adept",
+                    (weeklyAnalytics.promotions['Proficient→Adept'] ?? 0).toString(),
+                  ),
+                  _buildSummaryRow(
+                    "Adept → Mastered",
+                    (weeklyAnalytics.promotions['Adept→Mastered'] ?? 0).toString(),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle("Difficulty Histogram (Score 1-10)"),
+                  _buildDistributionChips(weeklyAnalytics.difficultyCounts),
+                  const SizedBox(height: 40),
                   _buildSectionTitle("Troublesome Words"),
                   if (troublesomeWords.isEmpty)
                     const Text("No data yet. Keep studying!", style: TextStyle(color: Colors.grey)),
@@ -227,4 +338,11 @@ class _StatsScreenState extends State<StatsScreen> {
       child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
     );
   }
+}
+
+class WeekOption {
+  final DateTime start;
+  final String label;
+
+  WeekOption({required this.start, required this.label});
 }

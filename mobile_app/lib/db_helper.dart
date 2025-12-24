@@ -29,6 +29,7 @@ class DatabaseHelper {
     final db = await _initDB('vocab_master.db');
     await _ensureOnDeckStatusSchema(db);
     await _ensureStudyLogSchema(db);
+    await _ensureStatusLogSchema(db);
     _database = db;
     return _database!;
   }
@@ -57,6 +58,7 @@ class DatabaseHelper {
     _database = await _initDB('vocab_master.db');
     await _ensureOnDeckStatusSchema(_database!);
     await _ensureStudyLogSchema(_database!);
+    await _ensureStatusLogSchema(_database!);
   }
 
   Future<void> _ensureStudyLogSchema(Database db) async {
@@ -69,6 +71,19 @@ class DatabaseHelper {
     if (!hasSessionId) {
       await db.execute("ALTER TABLE study_log ADD COLUMN session_id TEXT");
     }
+  }
+
+  Future<void> _ensureStatusLogSchema(Database db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS status_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        word_id INTEGER,
+        from_status TEXT,
+        to_status TEXT,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      )
+    """);
   }
 
   Future<void> _ensureOnDeckStatusSchema(Database db) async {
@@ -273,12 +288,12 @@ class DatabaseHelper {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     final int quizLength = prefs.getInt('quiz_length') ?? 20;
-    int pctLearning = prefs.getInt('pct_learning') ?? 60;
-    int pctProficient = prefs.getInt('pct_proficient') ?? 20;
-    int pctAdept = prefs.getInt('pct_adept') ?? 15;
-    int pctMastered = prefs.getInt('pct_mastered') ?? 5;
+    final int maxLearning = prefs.getInt('max_learning') ?? 20;
+    final int maxProficient = prefs.getInt('max_proficient') ?? 20;
+    final int maxAdept = prefs.getInt('max_adept') ?? 30;
+    final int masteredPct = prefs.getInt('pct_mastered') ?? 10;
 
     if (quizLength <= 0) {
       return [];
@@ -286,86 +301,134 @@ class DatabaseHelper {
 
     await _promoteOnDeckToLearning(db, activeLearningLimit);
 
-    final weights = <String, int>{
-      'Learning': pctLearning,
-      'Proficient': pctProficient,
-      'Adept': pctAdept,
-      'Mastered': pctMastered,
-    };
-
-    var totalWeight = weights.values.fold<int>(0, (sum, v) => sum + v);
-    if (totalWeight <= 0) {
-      pctLearning = 60;
-      pctProficient = 20;
-      pctAdept = 15;
-      pctMastered = 5;
-      weights['Learning'] = pctLearning;
-      weights['Proficient'] = pctProficient;
-      weights['Adept'] = pctAdept;
-      weights['Mastered'] = pctMastered;
-      totalWeight = 100;
-    }
-
-    final targets = <String, int>{};
-    final order = ['Learning', 'Proficient', 'Adept', 'Mastered'];
-    var allocated = 0;
-    for (final status in order) {
-      final count = ((quizLength * weights[status]!) / totalWeight).floor();
-      targets[status] = count;
-      allocated += count;
-    }
-
-    var remaining = quizLength - allocated;
-    final remainderOrder = order.where((status) => weights[status]! > 0).toList();
-    if (remainderOrder.isEmpty) {
-      remainderOrder.addAll(order);
-    }
-    var remainderIndex = 0;
-    while (remaining > 0) {
-      final status = remainderOrder[remainderIndex % remainderOrder.length];
-      targets[status] = (targets[status] ?? 0) + 1;
-      remaining--;
-      remainderIndex++;
-    }
-
     final deck = <Word>[];
     final selectedIds = <int>{};
+    final int masteredTarget = ((quizLength * masteredPct) / 100).round()
+        .clamp(0, quizLength);
 
-    for (final status in order) {
-      final limit = targets[status] ?? 0;
-      if (limit <= 0) {
-        continue;
-      }
-      final words = await _fetchWordsForStatus(
+    if (masteredTarget > 0) {
+      final masteredWords = await _fetchWordsForStatus(
         db,
-        status: status,
-        limit: limit,
-        dueOnly: status != 'Learning',
+        status: 'Mastered',
+        limit: masteredTarget,
+        dueOnly: true,
         excludeIds: selectedIds,
       );
-      for (final word in words) {
+      for (final word in masteredWords) {
         selectedIds.add(word.id);
       }
-      deck.addAll(words);
+      deck.addAll(masteredWords);
     }
 
-    var fillRemaining = quizLength - deck.length;
-    for (final status in order) {
-      if (fillRemaining <= 0) {
-        break;
+    var remaining = quizLength - deck.length;
+    if (remaining > 0) {
+      final countRows = await db.rawQuery('''
+        SELECT status, COUNT(*) as count
+        FROM words
+        WHERE status IN ('Learning', 'Proficient', 'Adept')
+        GROUP BY status
+      ''');
+
+      final counts = <String, int>{
+        'Learning': 0,
+        'Proficient': 0,
+        'Adept': 0,
+      };
+      for (final row in countRows) {
+        final status = row['status']?.toString();
+        final count = row['count'] as int? ?? 0;
+        if (status != null && counts.containsKey(status)) {
+          counts[status] = count;
+        }
       }
-      final words = await _fetchWordsForStatus(
-        db,
-        status: status,
-        limit: fillRemaining,
-        dueOnly: status != 'Learning',
-        excludeIds: selectedIds,
-      );
-      for (final word in words) {
+
+      final maxTargets = <String, int>{
+        'Learning': maxLearning,
+        'Proficient': maxProficient,
+        'Adept': maxAdept,
+      };
+
+      final pressures = <String, double>{};
+      for (final status in counts.keys) {
+        final maxValue = maxTargets[status] ?? 1;
+        final denom = maxValue <= 0 ? 1 : maxValue;
+        pressures[status] = counts[status]! / denom;
+      }
+
+      final rng = Random();
+      final exhausted = <String>{};
+      final order = ['Learning', 'Proficient', 'Adept'];
+
+      while (remaining > 0) {
+        final candidates = order
+            .where((status) =>
+                !exhausted.contains(status) &&
+                (counts[status] ?? 0) > 0)
+            .toList();
+        if (candidates.isEmpty) {
+          break;
+        }
+
+        final weights = <String, double>{};
+        var totalWeight = 0.0;
+        for (final status in candidates) {
+          final weight = 1.0 + (pressures[status] ?? 0.0);
+          weights[status] = weight;
+          totalWeight += weight;
+        }
+
+        if (totalWeight <= 0) {
+          break;
+        }
+
+        final pick = rng.nextDouble() * totalWeight;
+        var cumulative = 0.0;
+        String selectedStatus = candidates.first;
+        for (final status in candidates) {
+          cumulative += weights[status] ?? 0.0;
+          if (pick <= cumulative) {
+            selectedStatus = status;
+            break;
+          }
+        }
+
+        final words = await _fetchWordsForStatus(
+          db,
+          status: selectedStatus,
+          limit: 1,
+          dueOnly: selectedStatus != 'Learning',
+          excludeIds: selectedIds,
+        );
+        if (words.isEmpty) {
+          exhausted.add(selectedStatus);
+          continue;
+        }
+
+        final word = words.first;
         selectedIds.add(word.id);
+        deck.add(word);
+        remaining--;
       }
-      deck.addAll(words);
-      fillRemaining = quizLength - deck.length;
+
+      if (remaining > 0) {
+        for (final status in order) {
+          if (remaining <= 0) {
+            break;
+          }
+          final words = await _fetchWordsForStatus(
+            db,
+            status: status,
+            limit: remaining,
+            dueOnly: status != 'Learning',
+            excludeIds: selectedIds,
+          );
+          for (final word in words) {
+            selectedIds.add(word.id);
+          }
+          deck.addAll(words);
+          remaining = quizLength - deck.length;
+        }
+      }
     }
 
     deck.shuffle();
@@ -456,6 +519,19 @@ class DatabaseHelper {
     }
   }
 
+  String _promoteStatus(String status) {
+    switch (status) {
+      case 'Learning':
+        return 'Proficient';
+      case 'Proficient':
+        return 'Adept';
+      case 'Adept':
+        return 'Mastered';
+      default:
+        return status;
+    }
+  }
+
   String? _nextReviewDateForStatus(String status) {
     int daysToAdd = 0;
     if (status == 'Proficient') {
@@ -542,9 +618,96 @@ class DatabaseHelper {
       whereArgs: [wordId],
     );
 
+    if (newStatus != status && await _hasTable(db, 'status_log')) {
+      await db.insert('status_log', {
+        'word_id': wordId,
+        'from_status': status,
+        'to_status': newStatus,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    }
+
     await logResult(wordId, isCorrect, sessionId: sessionId);
 
-    final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
+    await _promoteOnDeckToLearning(db, activeLearningLimit);
+  }
+
+  Future<void> recordSelfGrade(
+    int wordId,
+    String grade, {
+    String? sessionId,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return;
+    }
+
+    final rows = await db.query(
+      'words',
+      columns: ['status', 'status_correct_streak'],
+      where: 'id = ?',
+      whereArgs: [wordId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return;
+    }
+
+    final status = rows.first['status']?.toString() ?? 'Learning';
+    final streak = rows.first['status_correct_streak'] as int? ?? 0;
+    String newStatus = status;
+    int newStreak = streak;
+    bool isCorrect = grade != 'failed';
+
+    final prefs = await SharedPreferences.getInstance();
+    final int learningThreshold = prefs.getInt('promote_learning_correct') ?? 3;
+    final int proficientThreshold = prefs.getInt('promote_proficient_correct') ?? 4;
+    final int adeptThreshold = prefs.getInt('promote_adept_correct') ?? 5;
+
+    if (grade == 'failed') {
+      newStatus = 'Learning';
+      newStreak = 0;
+    } else if (grade == 'easy') {
+      newStreak = streak + 1;
+      if (status == 'Learning' && newStreak >= learningThreshold) {
+        newStatus = 'Proficient';
+        newStreak = 0;
+      } else if (status == 'Proficient' && newStreak >= proficientThreshold) {
+        newStatus = 'Adept';
+        newStreak = 0;
+      } else if (status == 'Adept' && newStreak >= adeptThreshold) {
+        newStatus = 'Mastered';
+        newStreak = 0;
+      }
+    } else {
+      newStreak = streak;
+    }
+
+    await db.update(
+      'words',
+      {
+        'status': newStatus,
+        'status_correct_streak': newStreak,
+        'bucket_date': DateTime.now().toIso8601String(),
+        'next_review_date': _nextReviewDateForStatus(newStatus),
+      },
+      where: 'id = ?',
+      whereArgs: [wordId],
+    );
+
+    if (newStatus != status && await _hasTable(db, 'status_log')) {
+      await db.insert('status_log', {
+        'word_id': wordId,
+        'from_status': status,
+        'to_status': newStatus,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    }
+
+    await logResult(wordId, isCorrect, sessionId: sessionId);
+
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
   }
 
@@ -567,7 +730,7 @@ class DatabaseHelper {
     );
 
     final prefs = await SharedPreferences.getInstance();
-    final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
   }
 
@@ -599,7 +762,7 @@ class DatabaseHelper {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
     final total = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM words'));
     final learned = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status != 'New' AND status != 'Ignored'"));
@@ -767,6 +930,153 @@ class DatabaseHelper {
     }).toList();
   }
 
+  Future<WeeklyAnalytics> getWeeklyAnalytics(DateTime weekStart) async {
+    final db = await database;
+    if (!await _hasTable(db, 'study_log')) {
+      return WeeklyAnalytics(
+        activity: [],
+        totalQuizzes: 0,
+        totalDays: 0,
+        totalWords: 0,
+        totalAttempts: 0,
+        correctAttempts: 0,
+        promotions: {},
+        difficultyCounts: {},
+      );
+    }
+
+    final startStr = weekStart.toIso8601String().split('T')[0];
+    final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
+
+    final activity = await db.rawQuery('''
+      SELECT DATE(timestamp) as day, COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
+      FROM study_log
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+      GROUP BY day
+      ORDER BY day ASC
+    ''', [startStr, endStr]);
+
+    final totalQuizRows = await db.rawQuery('''
+      SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
+      FROM study_log
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+    ''', [startStr, endStr]);
+    final totalQuizzes = totalQuizRows.isNotEmpty ? (totalQuizRows.first['count'] as int? ?? 0) : 0;
+
+    final totalDaysRows = await db.rawQuery('''
+      SELECT COUNT(DISTINCT DATE(timestamp)) as count
+      FROM study_log
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+    ''', [startStr, endStr]);
+    final totalDays = totalDaysRows.isNotEmpty ? (totalDaysRows.first['count'] as int? ?? 0) : 0;
+
+    final totalWordsRows = await db.rawQuery('''
+      SELECT COUNT(DISTINCT word_id) as count
+      FROM study_log
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+    ''', [startStr, endStr]);
+    final totalWords = totalWordsRows.isNotEmpty ? (totalWordsRows.first['count'] as int? ?? 0) : 0;
+
+    final attemptsRows = await db.rawQuery('''
+      SELECT COUNT(*) as total_attempts,
+             SUM(CASE WHEN result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+      FROM study_log
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+    ''', [startStr, endStr]);
+    final totalAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['total_attempts'] as int? ?? 0) : 0;
+    final correctAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['correct_attempts'] as int? ?? 0) : 0;
+
+    final promotions = <String, int>{
+      'Learning→Proficient': 0,
+      'Proficient→Adept': 0,
+      'Adept→Mastered': 0,
+    };
+    if (await _hasTable(db, 'status_log')) {
+      final rows = await db.rawQuery('''
+        SELECT from_status, to_status, COUNT(*) as count
+        FROM status_log
+        WHERE DATE(timestamp) BETWEEN ? AND ?
+        GROUP BY from_status, to_status
+      ''', [startStr, endStr]);
+      for (final row in rows) {
+        final from = row['from_status']?.toString() ?? '';
+        final to = row['to_status']?.toString() ?? '';
+        final count = row['count'] as int? ?? 0;
+        if (from == 'Learning' && to == 'Proficient') {
+          promotions['Learning→Proficient'] = count;
+        } else if (from == 'Proficient' && to == 'Adept') {
+          promotions['Proficient→Adept'] = count;
+        } else if (from == 'Adept' && to == 'Mastered') {
+          promotions['Adept→Mastered'] = count;
+        }
+      }
+    }
+
+    final difficultyCounts = <String, int>{};
+    if (await _hasTable(db, 'words')) {
+      final rows = await db.rawQuery('''
+        SELECT DISTINCT w.id, w.difficulty_score
+        FROM study_log l
+        JOIN words w ON l.word_id = w.id
+        WHERE DATE(l.timestamp) BETWEEN ? AND ?
+      ''', [startStr, endStr]);
+
+      for (final row in rows) {
+        final score = row['difficulty_score'] as int? ?? 0;
+        final bucket = _difficultyBucket(score);
+        difficultyCounts[bucket] = (difficultyCounts[bucket] ?? 0) + 1;
+      }
+    }
+
+    return WeeklyAnalytics(
+      activity: activity,
+      totalQuizzes: totalQuizzes,
+      totalDays: totalDays,
+      totalWords: totalWords,
+      totalAttempts: totalAttempts,
+      correctAttempts: correctAttempts,
+      promotions: promotions,
+      difficultyCounts: difficultyCounts,
+    );
+  }
+
+  String _difficultyBucket(int score) {
+    if (score <= 0) {
+      return "Unknown";
+    }
+    if (score <= 2) {
+      return "1-2";
+    }
+    if (score <= 4) {
+      return "3-4";
+    }
+    if (score <= 6) {
+      return "5-6";
+    }
+    if (score <= 8) {
+      return "7-8";
+    }
+    return "9-10";
+  }
+
+  Future<int> getQuizCountForDate(DateTime date) async {
+    final db = await database;
+    if (!await _hasTable(db, 'study_log')) {
+      return 0;
+    }
+
+    final day = date.toIso8601String().split('T')[0];
+    final rows = await db.rawQuery('''
+      SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
+      FROM study_log
+      WHERE DATE(timestamp) = ?
+    ''', [day]);
+    if (rows.isEmpty) {
+      return 0;
+    }
+    return rows.first['count'] as int? ?? 0;
+  }
+
   Future<bool> wordExists(String wordStem) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -808,6 +1118,14 @@ class DatabaseHelper {
     }
 
     final now = DateTime.now().toIso8601String();
+    String? initialContext;
+    for (final example in examples) {
+      final trimmed = example.trim();
+      if (trimmed.isNotEmpty) {
+        initialContext = trimmed;
+        break;
+      }
+    }
     final wordId = await db.transaction<int>((txn) async {
       final id = await txn.insert('words', {
         'word_stem': wordStem,
@@ -815,6 +1133,7 @@ class DatabaseHelper {
         'status': status,
         'priority_tier': priorityTier,
         'difficulty_score': 0,
+        'original_context': initialContext,
         'bucket_date': now,
         'next_review_date': _nextReviewDateForStatus(status),
         'status_correct_streak': 0,
@@ -847,7 +1166,7 @@ class DatabaseHelper {
     });
 
     final prefs = await SharedPreferences.getInstance();
-    final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
 
     return wordId;

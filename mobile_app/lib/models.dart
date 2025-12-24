@@ -114,6 +114,28 @@ class DailyQuizReport {
   });
 }
 
+class WeeklyAnalytics {
+  final List<Map<String, dynamic>> activity;
+  final int totalQuizzes;
+  final int totalDays;
+  final int totalWords;
+  final int totalAttempts;
+  final int correctAttempts;
+  final Map<String, int> promotions;
+  final Map<String, int> difficultyCounts;
+
+  WeeklyAnalytics({
+    required this.activity,
+    required this.totalQuizzes,
+    required this.totalDays,
+    required this.totalWords,
+    required this.totalAttempts,
+    required this.correctAttempts,
+    required this.promotions,
+    required this.difficultyCounts,
+  });
+}
+
 class Distractor {
   final int id;
   final int wordId;

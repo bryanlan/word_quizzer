@@ -19,9 +19,13 @@ class _QuizScreenState extends State<QuizScreen> {
   bool hasAnswered = false;
   bool showContext = false;
   bool usedContextHint = false;
+  bool showSelfAnswer = false;
   int contextIndex = 0;
   List<String> contextExamples = [];
+  List<String> llmExamples = [];
+  String originalContextText = '';
   final Map<int, bool> sessionResults = {};
+  final Map<int, bool> contextRevealUsed = {};
   late final String sessionId;
   
   List<String> currentOptions = [];
@@ -48,6 +52,7 @@ class _QuizScreenState extends State<QuizScreen> {
     final words = await DatabaseHelper.instance.getDailyDeck();
     setState(() {
       sessionWords = words;
+      contextRevealUsed.clear();
       isLoading = false;
     });
     if (words.isNotEmpty) {
@@ -58,6 +63,20 @@ class _QuizScreenState extends State<QuizScreen> {
   Future<void> _loadOptionsForCurrent() async {
     if (sessionWords.isEmpty) return;
     final currentWord = sessionWords[currentIndex];
+    setState(() {
+      currentOptions = [];
+      hasAnswered = false;
+      showContext = false;
+      usedContextHint = false;
+      showSelfAnswer = false;
+      contextExamples = [];
+      llmExamples = [];
+      originalContextText = '';
+      feedbackMessage = null;
+      feedbackColor = Colors.transparent;
+      selectedOption = null;
+      contextRevealUsed[currentWord.id] = false;
+    });
     final options = await DatabaseHelper.instance.getOptionsForWord(currentWord);
     final examples = await DatabaseHelper.instance.getExamplesForWord(currentWord.id);
     final mergedContexts = <String>[];
@@ -73,18 +92,11 @@ class _QuizScreenState extends State<QuizScreen> {
         }
       }
     }
-    for (final ex in examples) {
-      final trimmed = ex.trim();
-      if (trimmed.isEmpty) {
-        continue;
-      }
-      final shortened = _shortenContext(trimmed);
-      if (shortened.isEmpty) {
-        continue;
-      }
-      final key = shortened.toLowerCase();
+    final cleanedExamples = _cleanExampleList(examples);
+    for (final ex in cleanedExamples) {
+      final key = ex.toLowerCase();
       if (!seen.contains(key)) {
-        mergedContexts.add(shortened);
+        mergedContexts.add(ex);
         seen.add(key);
       }
     }
@@ -94,8 +106,11 @@ class _QuizScreenState extends State<QuizScreen> {
       hasAnswered = false;
       showContext = false;
       usedContextHint = false;
+      showSelfAnswer = false;
       contextIndex = 0;
       contextExamples = mergedContexts;
+      llmExamples = cleanedExamples;
+      originalContextText = baseContext.isEmpty ? '' : _shortenContext(baseContext);
       selectedOption = null;
       feedbackMessage = null;
       feedbackColor = Colors.transparent;
@@ -116,12 +131,35 @@ class _QuizScreenState extends State<QuizScreen> {
     return trimmed;
   }
 
+  List<String> _cleanExampleList(List<String> items) {
+    final cleaned = <String>[];
+    final seen = <String>{};
+    for (final item in items) {
+      final trimmed = item.trim();
+      if (trimmed.isEmpty) {
+        continue;
+      }
+      final shortened = _shortenContext(trimmed);
+      if (shortened.isEmpty) {
+        continue;
+      }
+      final key = shortened.toLowerCase();
+      if (seen.contains(key)) {
+        continue;
+      }
+      seen.add(key);
+      cleaned.add(shortened);
+    }
+    return cleaned;
+  }
+
   void _handleOptionSelected(String selectedOption) async {
     if (hasAnswered) return; // Prevent double taps
 
     final currentWord = sessionWords[currentIndex];
     final correctDefinition = currentWord.definition ?? "MISSING DEFINITION";
     final isCorrect = selectedOption == correctDefinition;
+    final revealed = contextRevealUsed[currentWord.id] ?? usedContextHint;
     setState(() {
       hasAnswered = true;
       this.selectedOption = selectedOption;
@@ -136,7 +174,7 @@ class _QuizScreenState extends State<QuizScreen> {
     await DatabaseHelper.instance.recordAnswer(
       currentWord.id,
       isCorrect,
-      allowStreakIncrement: !usedContextHint,
+      allowStreakIncrement: !revealed,
       sessionId: sessionId,
     );
     sessionResults[currentWord.id] = isCorrect;
@@ -223,6 +261,7 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     final currentWord = sessionWords[currentIndex];
+    final isSelfGraded = _isSelfGraded(currentWord.status);
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
@@ -240,7 +279,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildContextSection(),
+                    if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
                     const SizedBox(height: 24),
                     Text(
                       currentWord.wordStem,
@@ -257,7 +296,11 @@ class _QuizScreenState extends State<QuizScreen> {
               flex: 3,
               child: Column(
                 children: [
-                  Expanded(child: _buildOptions(currentWord)),
+                  Expanded(
+                    child: isSelfGraded
+                        ? _buildSelfGradedPanel(currentWord)
+                        : _buildOptions(currentWord),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     "Proficiency Level: ${currentWord.status}",
@@ -328,10 +371,151 @@ class _QuizScreenState extends State<QuizScreen> {
         setState(() {
           showContext = true;
           usedContextHint = true;
+          final currentWord = sessionWords[currentIndex];
+          contextRevealUsed[currentWord.id] = true;
         });
       },
       child: const Text("Reveal context"),
     );
+  }
+
+  Widget _buildSelfGradedContext() {
+    return const Text(
+      "Think of the definition, then tap Reveal.",
+      textAlign: TextAlign.center,
+      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+    );
+  }
+
+  Widget _buildSelfGradedPanel(Word currentWord) {
+    if (!showSelfAnswer) {
+      return Center(
+        child: ElevatedButton(
+          onPressed: () {
+            setState(() {
+              showSelfAnswer = true;
+            });
+          },
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text("Reveal"),
+        ),
+      );
+    }
+
+    final definition = currentWord.definition ?? "MISSING DEFINITION";
+    final revealExamples = <String>[];
+    final original = originalContextText.trim();
+    if (original.isNotEmpty) {
+      revealExamples.add(original);
+    }
+    final originalKey = original.toLowerCase();
+    for (final example in llmExamples) {
+      if (originalKey.isNotEmpty && example.toLowerCase() == originalKey) {
+        continue;
+      }
+      revealExamples.add(example);
+    }
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Definition",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(definition),
+                const SizedBox(height: 16),
+                const Text(
+                  "Examples",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (revealExamples.isEmpty)
+                  const Text("No examples available.", style: TextStyle(color: Colors.grey))
+                else
+                  ...revealExamples.map(
+                    (example) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Text(
+                        "• $example",
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _handleSelfGrade('failed'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text("Failed"),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _handleSelfGrade('hard'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.amber,
+                  foregroundColor: Colors.black,
+                ),
+                child: const Text("Hard"),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _handleSelfGrade('easy'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text("Easy"),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  bool _isSelfGraded(String status) {
+    return status == 'Proficient' || status == 'Adept' || status == 'Mastered';
+  }
+
+  Future<void> _handleSelfGrade(String grade) async {
+    if (hasAnswered) return;
+    if (!showSelfAnswer) return;
+
+    final currentWord = sessionWords[currentIndex];
+    setState(() {
+      hasAnswered = true;
+    });
+
+    final isCorrect = grade != 'failed';
+    await DatabaseHelper.instance.recordSelfGrade(
+      currentWord.id,
+      grade,
+      sessionId: sessionId,
+    );
+    sessionResults[currentWord.id] = isCorrect;
+    _nextWord();
   }
 
   void _nextContext() {

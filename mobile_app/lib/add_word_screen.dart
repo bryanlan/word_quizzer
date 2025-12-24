@@ -59,7 +59,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
         return;
       }
 
-      Navigator.pop(context, true);
+      Navigator.pop(context, word);
     } on InvalidApiKeyException {
       if (!mounted) return;
       _showMessage("Invalid OpenRouter API key. Check Settings.");

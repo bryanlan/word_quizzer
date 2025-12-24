@@ -28,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool isLoading = true;
   String displayName = "Scholar";
   String apiKey = '';
+  int quizzesToday = 0;
 
   @override
   void initState() {
@@ -39,8 +40,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshStats() async {
     final s = await DatabaseHelper.instance.getStats();
+    final count = await DatabaseHelper.instance.getQuizCountForDate(DateTime.now());
     setState(() {
       stats = s;
+      quizzesToday = count;
       isLoading = false;
     });
   }
@@ -125,7 +128,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(
                   builder: (context) => AddWordScreen(apiKey: apiKey),
                 ),
-              ).then((_) => _refreshStats());
+              ).then((result) {
+                _refreshStats();
+                if (result is String && result.trim().isNotEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Added \"$result\".')),
+                  );
+                }
+              });
             },
             tooltip: 'Add Word',
           ),
@@ -169,6 +179,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     "Good ${_timeOfDayLabel()}, $displayName.",
                     style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      "Quizzes taken today: $quizzesToday",
+                      style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Row(

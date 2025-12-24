@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'db_helper.dart';
 import 'models.dart';
+import 'quiz_screen.dart';
 
 class QuizReportScreen extends StatefulWidget {
   final List<Word> words;
@@ -87,6 +88,38 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const QuizScreen(),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            backgroundColor: Colors.teal,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text("Take New Quiz"),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.popUntil(context, (route) => route.isFirst);
+                          },
+                          child: const Text("Return Home"),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
                   _buildSectionTitle("Summary"),
                   _buildSummaryRow("Total Questions", total.toString()),
                   _buildSummaryRow("Correct", correct.toString()),
@@ -112,15 +145,6 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
                     },
                   ),
                   const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.teal,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("Back to Home"),
-                  ),
                 ],
               ),
             ),

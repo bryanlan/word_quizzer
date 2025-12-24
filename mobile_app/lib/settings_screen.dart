@@ -10,12 +10,11 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  int activeLimit = 20;
   int quizLength = 20;
-  int pctLearning = 60;
-  int pctProficient = 20;
-  int pctAdept = 15;
-  int pctMastered = 5;
+  int maxLearning = 20;
+  int maxProficient = 20;
+  int maxAdept = 30;
+  int masteredPct = 10;
   int promoteLearning = 3;
   int promoteProficient = 4;
   int promoteAdept = 5;
@@ -33,25 +32,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      activeLimit = prefs.getInt('active_limit') ?? 20;
       quizLength = prefs.getInt('quiz_length') ?? 20;
-      pctLearning = prefs.getInt('pct_learning') ?? 60;
-      pctProficient = prefs.getInt('pct_proficient') ?? 20;
-      pctAdept = prefs.getInt('pct_adept') ?? 15;
-      pctMastered = prefs.getInt('pct_mastered') ?? 5;
+      maxLearning = prefs.getInt('max_learning') ?? 20;
+      maxProficient = prefs.getInt('max_proficient') ?? 20;
+      maxAdept = prefs.getInt('max_adept') ?? 30;
+      masteredPct = prefs.getInt('pct_mastered') ?? 10;
       promoteLearning = prefs.getInt('promote_learning_correct') ?? 3;
       promoteProficient = prefs.getInt('promote_proficient_correct') ?? 4;
       promoteAdept = prefs.getInt('promote_adept_correct') ?? 5;
       apiKeyController.text = prefs.getString('openrouter_api_key') ?? '';
       displayNameController.text = prefs.getString('display_name') ?? '';
-    });
-  }
-
-  Future<void> _saveSettings(int value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('active_limit', value);
-    setState(() {
-      activeLimit = value;
     });
   }
 
@@ -141,10 +131,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  int _totalPercent() {
-    return pctLearning + pctProficient + pctAdept + pctMastered;
-  }
-
   @override
   void dispose() {
     apiKeyController.dispose();
@@ -162,39 +148,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            const Text(
-              "Active Learning Cap",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              "How many words should be in the active 'Learning' phase at once? "
-              "Words are pulled from 'On Deck' to fill this cap.",
-              style: TextStyle(color: Colors.grey[400]),
-            ),
-            const SizedBox(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("5 Words"),
-                Text(
-                  "$activeLimit",
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.tealAccent),
-                ),
-                const Text("100 Words"),
-              ],
-            ),
-            Slider(
-              value: activeLimit.toDouble(),
-              min: 5,
-              max: 100,
-              divisions: 19,
-              label: activeLimit.toString(),
-              onChanged: (val) => _saveSettings(val.toInt()),
-            ),
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 24),
             const Text(
               "Quiz Settings",
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -230,57 +183,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 20),
             const Text(
-              "Quiz Mix (%)",
+              "Stage Caps",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
             Text(
-              "If the total isn't 100%, we normalize the mix automatically.",
+              "We bias quizzes toward stages that exceed these caps.",
               style: TextStyle(color: Colors.grey[400]),
             ),
             const SizedBox(height: 12),
-            _buildPercentSlider(
-              label: "Learning",
-              value: pctLearning,
-              color: Colors.orangeAccent,
+            _buildCapSlider(
+              label: "Max Learning",
+              value: maxLearning,
               onChanged: (value) {
-                _saveSetting('pct_learning', value);
-                setState(() => pctLearning = value);
+                _saveSetting('max_learning', value);
+                setState(() => maxLearning = value);
               },
             ),
-            _buildPercentSlider(
-              label: "Proficient",
-              value: pctProficient,
-              color: Colors.tealAccent,
+            _buildCapSlider(
+              label: "Max Proficient",
+              value: maxProficient,
               onChanged: (value) {
-                _saveSetting('pct_proficient', value);
-                setState(() => pctProficient = value);
+                _saveSetting('max_proficient', value);
+                setState(() => maxProficient = value);
               },
             ),
-            _buildPercentSlider(
-              label: "Adept",
-              value: pctAdept,
-              color: Colors.purpleAccent,
+            _buildCapSlider(
+              label: "Max Adept",
+              value: maxAdept,
               onChanged: (value) {
-                _saveSetting('pct_adept', value);
-                setState(() => pctAdept = value);
+                _saveSetting('max_adept', value);
+                setState(() => maxAdept = value);
               },
             ),
-            _buildPercentSlider(
-              label: "Mastered",
-              value: pctMastered,
-              color: Colors.greenAccent,
+            const SizedBox(height: 16),
+            const Text(
+              "Mastered Share (%)",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "Fixed portion of each quiz reserved for Mastered words.",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "Mastered backlog is unlimited; only this share controls quiz load.",
+              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            _buildMasteredSlider(
+              value: masteredPct,
               onChanged: (value) {
                 _saveSetting('pct_mastered', value);
-                setState(() => pctMastered = value);
+                setState(() => masteredPct = value);
               },
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Total: ${_totalPercent()}%",
-              style: TextStyle(
-                color: _totalPercent() == 100 ? Colors.grey[400] : Colors.amberAccent,
-              ),
             ),
             const SizedBox(height: 24),
             const Divider(),
@@ -433,10 +390,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildPercentSlider({
+  Widget _buildCapSlider({
     required String label,
     required int value,
-    required Color color,
     required ValueChanged<int> onChanged,
   }) {
     return Column(
@@ -447,16 +403,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text(label),
             Text(
+              "$value",
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent),
+            ),
+          ],
+        ),
+        Slider(
+          value: value.toDouble(),
+          min: 5,
+          max: 200,
+          divisions: 39,
+          label: value.toString(),
+          onChanged: (val) => onChanged(val.toInt()),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMasteredSlider({
+    required int value,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text("Mastered"),
+            Text(
               "$value%",
-              style: TextStyle(fontWeight: FontWeight.bold, color: color),
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent),
             ),
           ],
         ),
         Slider(
           value: value.toDouble(),
           min: 0,
-          max: 100,
-          divisions: 20,
+          max: 50,
+          divisions: 10,
           label: value.toString(),
           onChanged: (val) => onChanged(val.toInt()),
         ),
