@@ -1,24 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'db_helper.dart';
 import 'models.dart';
 
-class QuizReportScreen extends StatefulWidget {
-  final List<Word> words;
-  final Map<int, bool> results;
+class DailyReportScreen extends StatefulWidget {
+  final String day;
 
-  const QuizReportScreen({
+  const DailyReportScreen({
     super.key,
-    required this.words,
-    required this.results,
+    required this.day,
   });
 
   @override
-  State<QuizReportScreen> createState() => _QuizReportScreenState();
+  State<DailyReportScreen> createState() => _DailyReportScreenState();
 }
 
-class _QuizReportScreenState extends State<QuizReportScreen> {
+class _DailyReportScreenState extends State<DailyReportScreen> {
   bool isLoading = true;
   List<QuizWordReport> reports = [];
+  Map<int, bool> lastResults = {};
+  int totalAttempts = 0;
+  int correctAttempts = 0;
 
   @override
   void initState() {
@@ -27,10 +29,12 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
   }
 
   Future<void> _loadReport() async {
-    final ids = widget.words.map((w) => w.id).toList();
-    final data = await DatabaseHelper.instance.getQuizReportData(ids);
+    final data = await DatabaseHelper.instance.getDailyReport(widget.day);
     setState(() {
-      reports = data;
+      reports = data.reports;
+      lastResults = data.lastResults;
+      totalAttempts = data.totalAttempts;
+      correctAttempts = data.correctAttempts;
       isLoading = false;
     });
   }
@@ -73,13 +77,15 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final total = widget.results.length;
-    final correct = widget.results.values.where((v) => v).length;
-    final incorrect = total - correct;
-    final accuracy = total > 0 ? ((correct / total) * 100).round() : 0;
+    final incorrectAttempts = totalAttempts - correctAttempts;
+    final accuracy = totalAttempts > 0
+        ? ((correctAttempts / totalAttempts) * 100).round()
+        : 0;
+    final dayDate = DateTime.tryParse(widget.day) ?? DateTime.now();
+    final dayLabel = DateFormat('EEE, MMM d').format(dayDate);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Quiz Report")),
+      appBar: AppBar(title: const Text("Daily Report")),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -88,9 +94,11 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionTitle("Summary"),
-                  _buildSummaryRow("Total Questions", total.toString()),
-                  _buildSummaryRow("Correct", correct.toString()),
-                  _buildSummaryRow("Incorrect", incorrect.toString()),
+                  Text(dayLabel, style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  _buildSummaryRow("Total Questions", totalAttempts.toString()),
+                  _buildSummaryRow("Correct", correctAttempts.toString()),
+                  _buildSummaryRow("Incorrect", incorrectAttempts.toString()),
                   _buildSummaryRow("Accuracy", "$accuracy%"),
                   const SizedBox(height: 24),
                   _buildSectionTitle("Mastery Distribution"),
@@ -100,17 +108,23 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
                   _buildDistributionChips(_difficultyDistribution()),
                   const SizedBox(height: 24),
                   _buildSectionTitle("Word Details"),
-                  ListView.separated(
-                    itemCount: reports.length,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final report = reports[index];
-                      final result = widget.results[report.id] ?? false;
-                      return _buildWordTile(report, result);
-                    },
-                  ),
+                  if (reports.isEmpty)
+                    const Text(
+                      "No quiz data for this day.",
+                      style: TextStyle(color: Colors.grey),
+                    )
+                  else
+                    ListView.separated(
+                      itemCount: reports.length,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final report = reports[index];
+                        final result = lastResults[report.id];
+                        return _buildWordTile(report, result);
+                      },
+                    ),
                   const SizedBox(height: 24),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
@@ -119,7 +133,7 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
                       backgroundColor: Colors.teal,
                       foregroundColor: Colors.white,
                     ),
-                    child: const Text("Back to Home"),
+                    child: const Text("Back to Analytics"),
                   ),
                 ],
               ),
@@ -165,12 +179,16 @@ class _QuizReportScreenState extends State<QuizReportScreen> {
     );
   }
 
-  Widget _buildWordTile(QuizWordReport report, bool correctThisTime) {
+  Widget _buildWordTile(QuizWordReport report, bool? correctThisDay) {
     final total = report.totalAttempts;
     final correct = report.correctAttempts;
     final percent = total == 0 ? "NA" : "${((correct / total) * 100).round()}%";
-    final resultLabel = correctThisTime ? "Correct" : "Incorrect";
-    final resultColor = correctThisTime ? Colors.green : Colors.redAccent;
+    final resultLabel = correctThisDay == null
+        ? "No result"
+        : (correctThisDay ? "Correct" : "Incorrect");
+    final resultColor = correctThisDay == null
+        ? Colors.grey
+        : (correctThisDay ? Colors.green : Colors.redAccent);
 
     return ListTile(
       title: Text(report.wordStem),

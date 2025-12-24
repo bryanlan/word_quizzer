@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'db_helper.dart';
 import 'quiz_screen.dart';
 import 'settings_screen.dart';
@@ -14,6 +15,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const MethodChannel _userChannel =
+      MethodChannel('com.example.vocab_master/user');
   Map<String, dynamic> stats = {
     'total': 0,
     'learned': 0,
@@ -24,11 +27,13 @@ class _HomeScreenState extends State<HomeScreen> {
     'on_deck': 0,
   };
   bool isLoading = true;
+  String displayName = "Scholar";
 
   @override
   void initState() {
     super.initState();
     _refreshStats();
+    _loadDisplayName();
   }
 
   Future<void> _refreshStats() async {
@@ -37,6 +42,32 @@ class _HomeScreenState extends State<HomeScreen> {
       stats = s;
       isLoading = false;
     });
+  }
+
+  Future<void> _loadDisplayName() async {
+    try {
+      final result = await _userChannel.invokeMethod<String>('getUserName');
+      final trimmed = (result ?? "").trim();
+      if (trimmed.isNotEmpty && trimmed.toLowerCase() != "owner") {
+        if (!mounted) return;
+        setState(() {
+          displayName = trimmed;
+        });
+      }
+    } catch (_) {
+      // Keep default if the platform does not provide a name.
+    }
+  }
+
+  String _timeOfDayLabel() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) {
+      return "Morning";
+    }
+    if (hour >= 12 && hour < 18) {
+      return "Afternoon";
+    }
+    return "Night";
   }
 
   Future<void> _importDb() async {
@@ -98,9 +129,9 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    "Good Morning, Scholar.",
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  Text(
+                    "Good ${_timeOfDayLabel()}, $displayName.",
+                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 20),
                   Row(

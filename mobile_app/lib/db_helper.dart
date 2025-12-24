@@ -28,6 +28,7 @@ class DatabaseHelper {
     if (_database != null) return _database!;
     final db = await _initDB('vocab_master.db');
     await _ensureOnDeckStatusSchema(db);
+    await _ensureStudyLogSchema(db);
     _database = db;
     return _database!;
   }
@@ -55,6 +56,19 @@ class DatabaseHelper {
 
     _database = await _initDB('vocab_master.db');
     await _ensureOnDeckStatusSchema(_database!);
+    await _ensureStudyLogSchema(_database!);
+  }
+
+  Future<void> _ensureStudyLogSchema(Database db) async {
+    if (!await _hasTable(db, 'study_log')) {
+      return;
+    }
+
+    final columns = await db.rawQuery("PRAGMA table_info(study_log)");
+    final hasSessionId = columns.any((c) => c['name'] == 'session_id');
+    if (!hasSessionId) {
+      await db.execute("ALTER TABLE study_log ADD COLUMN session_id TEXT");
+    }
   }
 
   Future<void> _ensureOnDeckStatusSchema(Database db) async {
@@ -462,7 +476,12 @@ class DatabaseHelper {
         .split('T')[0];
   }
 
-  Future<void> recordAnswer(int wordId, bool isCorrect, {bool allowStreakIncrement = true}) async {
+  Future<void> recordAnswer(
+    int wordId,
+    bool isCorrect, {
+    bool allowStreakIncrement = true,
+    String? sessionId,
+  }) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
       return;
@@ -523,7 +542,7 @@ class DatabaseHelper {
       whereArgs: [wordId],
     );
 
-    await logResult(wordId, isCorrect);
+    await logResult(wordId, isCorrect, sessionId: sessionId);
 
     final int activeLearningLimit = prefs.getInt('active_limit') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
@@ -552,7 +571,7 @@ class DatabaseHelper {
     await _promoteOnDeckToLearning(db, activeLearningLimit);
   }
 
-  Future<void> logResult(int wordId, bool isCorrect) async {
+  Future<void> logResult(int wordId, bool isCorrect, {String? sessionId}) async {
     final db = await database;
     if (!await _hasTable(db, 'study_log')) {
       return;
@@ -561,6 +580,7 @@ class DatabaseHelper {
       'word_id': wordId,
       'result': isCorrect ? 'Correct' : 'Incorrect',
       'timestamp': DateTime.now().toIso8601String(),
+      'session_id': sessionId,
     });
   }
   
@@ -663,7 +683,7 @@ class DatabaseHelper {
     if (!hasStudyLog) {
       final rows = await db.query(
         'words',
-        columns: ['id', 'word_stem', 'status', 'status_correct_streak', 'priority_tier'],
+        columns: ['id', 'word_stem', 'status', 'status_correct_streak', 'difficulty_score'],
         where: 'id IN ($placeholders)',
         whereArgs: wordIds,
         orderBy: 'word_stem COLLATE NOCASE',
@@ -683,7 +703,7 @@ class DatabaseHelper {
         w.word_stem,
         w.status,
         w.status_correct_streak,
-        w.priority_tier,
+        w.difficulty_score,
         COUNT(l.id) as total_attempts,
         SUM(CASE WHEN l.result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
       FROM words w
@@ -700,5 +720,105 @@ class DatabaseHelper {
       normalized['status_correct_streak'] = normalized['status_correct_streak'] ?? 0;
       return QuizWordReport.fromMap(normalized);
     }).toList();
+  }
+
+  Future<DailyQuizReport> getDailyReport(String day) async {
+    final db = await database;
+    if (!await _hasTable(db, 'study_log') || !await _hasTable(db, 'words')) {
+      return DailyQuizReport(
+        reports: [],
+        lastResults: {},
+        totalAttempts: 0,
+        correctAttempts: 0,
+      );
+    }
+
+    final summaryRows = await db.rawQuery('''
+      SELECT 
+        COUNT(*) as total_attempts,
+        SUM(CASE WHEN result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+      FROM study_log
+      WHERE DATE(timestamp) = ?
+    ''', [day]);
+
+    int totalAttempts = 0;
+    int correctAttempts = 0;
+    if (summaryRows.isNotEmpty) {
+      final row = summaryRows.first;
+      totalAttempts = row['total_attempts'] as int? ?? 0;
+      correctAttempts = row['correct_attempts'] as int? ?? 0;
+    }
+
+    if (totalAttempts == 0) {
+      return DailyQuizReport(
+        reports: [],
+        lastResults: {},
+        totalAttempts: 0,
+        correctAttempts: 0,
+      );
+    }
+
+    final rows = await db.rawQuery('''
+      WITH day_logs AS (
+        SELECT 
+          word_id,
+          MAX(id) as last_id
+        FROM study_log
+        WHERE DATE(timestamp) = ?
+        GROUP BY word_id
+      ),
+      all_logs AS (
+        SELECT
+          word_id,
+          COUNT(*) as total_attempts,
+          SUM(CASE WHEN result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+        FROM study_log
+        GROUP BY word_id
+      ),
+      last_results AS (
+        SELECT 
+          l.word_id,
+          l.result as last_result
+        FROM study_log l
+        JOIN day_logs d ON l.id = d.last_id
+      )
+      SELECT 
+        w.id,
+        w.word_stem,
+        w.status,
+        w.status_correct_streak,
+        w.difficulty_score,
+        COALESCE(a.total_attempts, 0) as total_attempts,
+        COALESCE(a.correct_attempts, 0) as correct_attempts,
+        lr.last_result
+      FROM day_logs d
+      JOIN words w ON w.id = d.word_id
+      LEFT JOIN all_logs a ON a.word_id = w.id
+      LEFT JOIN last_results lr ON lr.word_id = w.id
+      ORDER BY w.word_stem COLLATE NOCASE
+    ''', [day]);
+
+    final reports = <QuizWordReport>[];
+    final lastResults = <int, bool>{};
+    for (final row in rows) {
+      final normalized = Map<String, dynamic>.from(row);
+      normalized['status_correct_streak'] = normalized['status_correct_streak'] ?? 0;
+      normalized['total_attempts'] = normalized['total_attempts'] ?? 0;
+      normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
+      final report = QuizWordReport.fromMap(normalized);
+      reports.add(report);
+
+      final lastResult = row['last_result']?.toString();
+      if (lastResult != null) {
+        lastResults[report.id] = lastResult == 'Correct';
+      }
+    }
+
+    return DailyQuizReport(
+      reports: reports,
+      lastResults: lastResults,
+      totalAttempts: totalAttempts,
+      correctAttempts: correctAttempts,
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'db_helper.dart';
 import 'package:intl/intl.dart';
+import 'daily_report_screen.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -14,7 +15,7 @@ class _StatsScreenState extends State<StatsScreen> {
   bool isLoading = true;
   List<Map<String, dynamic>> troublesomeWords = [];
   List<BarChartGroupData> chartData = [];
-  double masteryRate = 0.0;
+  int maxQuizCount = 0;
 
   @override
   void initState() {
@@ -28,8 +29,8 @@ class _StatsScreenState extends State<StatsScreen> {
     if (!hasWords) {
       setState(() {
         troublesomeWords = [];
-        masteryRate = 0.0;
         chartData = _buildChartGroups([]);
+        maxQuizCount = 0;
         isLoading = false;
       });
       return;
@@ -56,7 +57,9 @@ class _StatsScreenState extends State<StatsScreen> {
     List<Map<String, dynamic>> activity = [];
     if (hasStudyLog) {
       activity = await db.rawQuery('''
-        SELECT DATE(timestamp) as day, COUNT(*) as count
+        SELECT
+          DATE(timestamp) as day,
+          COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
         FROM study_log
         WHERE timestamp >= DATE('now', '-7 days')
         GROUP BY day
@@ -64,14 +67,10 @@ class _StatsScreenState extends State<StatsScreen> {
       ''');
     }
 
-    // 3. Mastery Rate
-    final stats = await DatabaseHelper.instance.getStats();
-    double rate = stats['total'] > 0 ? stats['mastered'] / stats['total'] : 0.0;
-
     setState(() {
       troublesomeWords = badWords;
-      masteryRate = rate;
       chartData = _buildChartGroups(activity);
+      maxQuizCount = _maxQuizCount(activity);
       isLoading = false;
     });
   }
@@ -98,6 +97,28 @@ class _StatsScreenState extends State<StatsScreen> {
     });
   }
 
+  int _maxQuizCount(List<Map<String, dynamic>> data) {
+    if (data.isEmpty) {
+      return 0;
+    }
+    int maxValue = 0;
+    for (final row in data) {
+      final count = row['count'] as int? ?? 0;
+      if (count > maxValue) {
+        maxValue = count;
+      }
+    }
+    return maxValue;
+  }
+
+  double _leftInterval() {
+    if (maxQuizCount <= 5) {
+      return 1;
+    }
+    final interval = (maxQuizCount / 5).ceil();
+    return interval.toDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,37 +130,53 @@ class _StatsScreenState extends State<StatsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle("Mastery Progress"),
-                  Center(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          width: 150,
-                          height: 150,
-                          child: CircularProgressIndicator(
-                            value: masteryRate,
-                            strokeWidth: 12,
-                            backgroundColor: Colors.white10,
-                            color: Colors.greenAccent,
-                          ),
-                        ),
-                        Text(
-                          "${(masteryRate * 100).toInt()}%",
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  _buildSectionTitle("Activity (Last 7 Days)"),
+                  _buildSectionTitle("Activity (Quizzes per Day)"),
                   SizedBox(
                     height: 200,
                     child: BarChart(
                       BarChartData(
                         barGroups: chartData,
+                        maxY: maxQuizCount == 0 ? 1 : (maxQuizCount + 1).toDouble(),
                         borderData: FlBorderData(show: false),
-                        gridData: const FlGridData(show: false),
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: _leftInterval(),
+                          getDrawingHorizontalLine: (value) => FlLine(
+                            color: Colors.white12,
+                            strokeWidth: 1,
+                          ),
+                        ),
+                        barTouchData: BarTouchData(
+                          enabled: true,
+                          touchTooltipData: BarTouchTooltipData(
+                            tooltipBgColor: Colors.black87,
+                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                              final date = DateTime.now()
+                                  .subtract(Duration(days: 6 - group.x));
+                              final label = DateFormat('EEE').format(date);
+                              return BarTooltipItem(
+                                "$label\n${rod.toY.toInt()} quizzes",
+                                const TextStyle(color: Colors.white),
+                              );
+                            },
+                          ),
+                          touchCallback: (event, response) {
+                            if (event is! FlTapUpEvent || response?.spot == null) {
+                              return;
+                            }
+                            final index = response!.spot!.touchedBarGroupIndex;
+                            final date = DateTime.now()
+                                .subtract(Duration(days: 6 - index));
+                            final day = DateFormat('yyyy-MM-dd').format(date);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DailyReportScreen(day: day),
+                              ),
+                            );
+                          },
+                        ),
                         titlesData: FlTitlesData(
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(
@@ -150,7 +187,19 @@ class _StatsScreenState extends State<StatsScreen> {
                               },
                             ),
                           ),
-                          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 32,
+                              interval: _leftInterval(),
+                              getTitlesWidget: (value, meta) {
+                                return Text(
+                                  value.toInt().toString(),
+                                  style: const TextStyle(color: Colors.grey, fontSize: 10),
+                                );
+                              },
+                            ),
+                          ),
                           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                         ),

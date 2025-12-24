@@ -61,13 +61,14 @@ class _WordListScreenState extends State<WordListScreen> {
                     return ListTile(
                       title: Text(word.wordStem),
                       subtitle: Text(_statsText(word)),
-                      onTap: () {
-                        Navigator.push(
+                      onTap: () async {
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => WordDetailScreen(word: word),
                           ),
                         );
+                        _loadWords();
                       },
                     );
                   },

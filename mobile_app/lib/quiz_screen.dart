@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
@@ -21,6 +22,7 @@ class _QuizScreenState extends State<QuizScreen> {
   int contextIndex = 0;
   List<String> contextExamples = [];
   final Map<int, bool> sessionResults = {};
+  late final String sessionId;
   
   List<String> currentOptions = [];
   String? selectedOption;
@@ -32,6 +34,7 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void initState() {
     super.initState();
+    sessionId = _createSessionId();
     _loadSession();
     _initTts();
   }
@@ -61,10 +64,13 @@ class _QuizScreenState extends State<QuizScreen> {
     final seen = <String>{};
     final baseContext = (currentWord.originalContext ?? '').trim();
     if (baseContext.isNotEmpty) {
-      final key = baseContext.toLowerCase();
-      if (!seen.contains(key)) {
-        mergedContexts.add(baseContext);
-        seen.add(key);
+      final shortened = _shortenContext(baseContext);
+      if (shortened.isNotEmpty) {
+        final key = shortened.toLowerCase();
+        if (!seen.contains(key)) {
+          mergedContexts.add(shortened);
+          seen.add(key);
+        }
       }
     }
     for (final ex in examples) {
@@ -72,9 +78,13 @@ class _QuizScreenState extends State<QuizScreen> {
       if (trimmed.isEmpty) {
         continue;
       }
-      final key = trimmed.toLowerCase();
+      final shortened = _shortenContext(trimmed);
+      if (shortened.isEmpty) {
+        continue;
+      }
+      final key = shortened.toLowerCase();
       if (!seen.contains(key)) {
-        mergedContexts.add(trimmed);
+        mergedContexts.add(shortened);
         seen.add(key);
       }
     }
@@ -90,6 +100,20 @@ class _QuizScreenState extends State<QuizScreen> {
       feedbackMessage = null;
       feedbackColor = Colors.transparent;
     });
+  }
+
+  String _shortenContext(String text) {
+    var trimmed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (trimmed.isEmpty) {
+      return trimmed;
+    }
+
+    const maxChars = 180;
+    if (trimmed.length > maxChars) {
+      trimmed = "${trimmed.substring(0, maxChars - 3).trimRight()}...";
+    }
+
+    return trimmed;
   }
 
   void _handleOptionSelected(String selectedOption) async {
@@ -113,16 +137,22 @@ class _QuizScreenState extends State<QuizScreen> {
       currentWord.id,
       isCorrect,
       allowStreakIncrement: !usedContextHint,
+      sessionId: sessionId,
     );
     sessionResults[currentWord.id] = isCorrect;
 
     if (isCorrect) {
       flutterTts.speak(currentWord.wordStem);
       // Auto advance after short delay
-      Future.delayed(const Duration(seconds: 2), _nextWord);
+      Future.delayed(const Duration(seconds: 1), _nextWord);
     } else {
       _showFailureDialog(currentWord);
     }
+  }
+
+  String _createSessionId() {
+    final rand = Random();
+    return "${DateTime.now().millisecondsSinceEpoch}-${rand.nextInt(1000000)}";
   }
 
   Future<void> _showFailureDialog(Word word) async {
@@ -142,6 +172,9 @@ class _QuizScreenState extends State<QuizScreen> {
             const SizedBox(height: 20),
             const Text("Definition:", style: TextStyle(fontWeight: FontWeight.bold)),
             Text(word.definition ?? "N/A"),
+            const SizedBox(height: 12),
+            const Text("Word:", style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(word.wordStem),
             const SizedBox(height: 20),
             const Text("Type the word to proceed:"),
             TextField(

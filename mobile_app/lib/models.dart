@@ -75,7 +75,7 @@ class QuizWordReport {
   final int totalAttempts;
   final int correctAttempts;
   final int currentStreak;
-  final int priorityTier;
+  final int difficultyScore;
 
   QuizWordReport({
     required this.id,
@@ -84,7 +84,7 @@ class QuizWordReport {
     required this.totalAttempts,
     required this.correctAttempts,
     required this.currentStreak,
-    required this.priorityTier,
+    required this.difficultyScore,
   });
 
   factory QuizWordReport.fromMap(Map<String, dynamic> map) {
@@ -95,9 +95,23 @@ class QuizWordReport {
       totalAttempts: map['total_attempts'] ?? 0,
       correctAttempts: map['correct_attempts'] ?? 0,
       currentStreak: map['status_correct_streak'] ?? 0,
-      priorityTier: map['priority_tier'] ?? 3,
+      difficultyScore: map['difficulty_score'] ?? 0,
     );
   }
+}
+
+class DailyQuizReport {
+  final List<QuizWordReport> reports;
+  final Map<int, bool> lastResults;
+  final int totalAttempts;
+  final int correctAttempts;
+
+  DailyQuizReport({
+    required this.reports,
+    required this.lastResults,
+    required this.totalAttempts,
+    required this.correctAttempts,
+  });
 }
 
 class Distractor {
