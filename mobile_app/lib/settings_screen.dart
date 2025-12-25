@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'openrouter_service.dart';
+import 'sync_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -21,7 +22,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool showApiKey = false;
   final TextEditingController apiKeyController = TextEditingController();
   final TextEditingController displayNameController = TextEditingController();
+  final TextEditingController syncUrlController = TextEditingController();
+  final TextEditingController syncTokenController = TextEditingController();
+  bool showSyncToken = false;
   bool isTestingKey = false;
+  bool isTestingSync = false;
+  bool isSyncing = false;
+  String lastSyncAt = '';
 
   @override
   void initState() {
@@ -42,6 +49,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       promoteAdept = prefs.getInt('promote_adept_correct') ?? 5;
       apiKeyController.text = prefs.getString('openrouter_api_key') ?? '';
       displayNameController.text = prefs.getString('display_name') ?? '';
+      syncUrlController.text =
+          prefs.getString('sync_server_url') ?? 'https://word-quizzer-api.bryanlangley.org';
+      syncTokenController.text = prefs.getString('sync_jwt') ?? '';
+      lastSyncAt = prefs.getString('last_sync_at') ?? '';
     });
   }
 
@@ -131,10 +142,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _saveSyncSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('sync_server_url', syncUrlController.text.trim());
+    await prefs.setString('sync_jwt', syncTokenController.text.trim());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sync settings saved.')),
+    );
+  }
+
+  Future<void> _clearSyncToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('sync_jwt');
+    setState(() {
+      syncTokenController.text = '';
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sync token cleared.')),
+    );
+  }
+
+  Future<void> _testSync() async {
+    final url = syncUrlController.text.trim();
+    final token = syncTokenController.text.trim();
+    if (url.isEmpty || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter server URL and JWT token.')),
+      );
+      return;
+    }
+    setState(() {
+      isTestingSync = true;
+    });
+    try {
+      final service = SyncService(baseUrl: url, token: token);
+      await service.testAuth();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sync auth verified.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sync test failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isTestingSync = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _runSync() async {
+    final url = syncUrlController.text.trim();
+    final token = syncTokenController.text.trim();
+    if (url.isEmpty || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter server URL and JWT token.')),
+      );
+      return;
+    }
+    setState(() {
+      isSyncing = true;
+    });
+    try {
+      final service = SyncService(baseUrl: url, token: token);
+      final summary = await service.sync();
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().toIso8601String();
+      await prefs.setString('last_sync_at', now);
+      if (!mounted) return;
+      setState(() {
+        lastSyncAt = now;
+      });
+      final secondPassNote = summary.hadSecondPass ? ' (two-pass)' : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Sync complete$secondPassNote. '
+            '${summary.wordsCreated} new, ${summary.wordsUpdated} updated.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sync failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSyncing = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     apiKeyController.dispose();
     displayNameController.dispose();
+    syncUrlController.dispose();
+    syncTokenController.dispose();
     super.dispose();
   }
 
@@ -383,6 +496,107 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : const Text("Test Key"),
               ),
             ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 24),
+            const Text(
+              "Sync",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Use your Omnilearner JWT to sync data across devices.",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: syncUrlController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: "Server URL",
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: syncTokenController,
+              obscureText: !showSyncToken,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: "JWT Token",
+                suffixIcon: IconButton(
+                  icon: Icon(showSyncToken ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () {
+                    setState(() {
+                      showSyncToken = !showSyncToken;
+                    });
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _saveSyncSettings,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text("Save Sync Settings"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _clearSyncToken,
+                    child: const Text("Clear Token"),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: isTestingSync ? null : _testSync,
+                    child: isTestingSync
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text("Test Sync"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: isSyncing ? null : _runSync,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: isSyncing
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text("Sync Now"),
+                  ),
+                ),
+              ],
+            ),
+            if (lastSyncAt.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  "Last sync: $lastSyncAt",
+                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                ),
+              ),
             ],
           ),
         ),

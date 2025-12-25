@@ -96,6 +96,8 @@ class DatabaseHelper {
     final hasPriorityTier = columns.any((c) => c['name'] == 'priority_tier');
     final hasManualFlag = columns.any((c) => c['name'] == 'manual_flag');
     final hasStreak = columns.any((c) => c['name'] == 'status_correct_streak');
+    final hasServerWordId = columns.any((c) => c['name'] == 'server_word_id');
+    final hasUpdatedAt = columns.any((c) => c['name'] == 'updated_at');
 
     final tableSqlRows = await db.rawQuery(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='words'"
@@ -113,6 +115,13 @@ class DatabaseHelper {
         }
         if (!hasStreak) {
           await txn.execute("ALTER TABLE words ADD COLUMN status_correct_streak INTEGER DEFAULT 0");
+        }
+        if (!hasServerWordId) {
+          await txn.execute("ALTER TABLE words ADD COLUMN server_word_id INTEGER");
+        }
+        if (!hasUpdatedAt) {
+          await txn.execute("ALTER TABLE words ADD COLUMN updated_at TEXT");
+          await txn.execute("UPDATE words SET updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)");
         }
       });
       return;
@@ -135,7 +144,9 @@ class DatabaseHelper {
           difficulty_score INTEGER,
           priority_tier INTEGER,
           status_correct_streak INTEGER DEFAULT 0,
-          manual_flag BOOLEAN DEFAULT 0
+          manual_flag BOOLEAN DEFAULT 0,
+          server_word_id INTEGER,
+          updated_at TEXT
         );
       """);
 
@@ -153,7 +164,9 @@ class DatabaseHelper {
           difficulty_score,
           priority_tier,
           status_correct_streak,
-          manual_flag
+          manual_flag,
+          server_word_id,
+          updated_at
         )
         SELECT
           id,
@@ -168,7 +181,9 @@ class DatabaseHelper {
           difficulty_score,
           ${hasPriorityTier ? 'priority_tier' : 'NULL'},
           ${hasStreak ? 'status_correct_streak' : '0'},
-          ${hasManualFlag ? 'manual_flag' : '0'}
+          ${hasManualFlag ? 'manual_flag' : '0'},
+          NULL,
+          CURRENT_TIMESTAMP
         FROM words_old;
       """);
       await txn.execute("DROP TABLE words_old");
@@ -242,6 +257,7 @@ class DatabaseHelper {
         'status': 'Learning',
         'bucket_date': now,
         'next_review_date': null,
+        'updated_at': now,
       },
       where: 'id IN ($idList)',
     );
@@ -614,6 +630,7 @@ class DatabaseHelper {
         'status_correct_streak': newStreak,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
+        'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [wordId],
@@ -692,6 +709,7 @@ class DatabaseHelper {
         'status_correct_streak': newStreak,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
+        'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [wordId],
@@ -725,6 +743,7 @@ class DatabaseHelper {
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
         'status_correct_streak': 0,
+        'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -1139,6 +1158,7 @@ class DatabaseHelper {
         'next_review_date': _nextReviewDateForStatus(status),
         'status_correct_streak': 0,
         'manual_flag': 1,
+        'updated_at': now,
       });
 
       for (final example in examples) {
