@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'db_helper.dart';
+import 'openrouter_service.dart';
 import 'word_enrichment_service.dart';
 
 class AddWordScreen extends StatefulWidget {
