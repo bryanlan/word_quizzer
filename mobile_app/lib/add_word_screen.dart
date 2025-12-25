@@ -1,11 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'db_helper.dart';
-import 'openrouter_service.dart';
+import 'word_enrichment_service.dart';
 
 class AddWordScreen extends StatefulWidget {
-  final String apiKey;
-
-  const AddWordScreen({super.key, required this.apiKey});
+  const AddWordScreen({super.key});
 
   @override
   State<AddWordScreen> createState() => _AddWordScreenState();
@@ -41,8 +40,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
         return;
       }
 
-      final service = OpenRouterService(widget.apiKey);
-      final enrichment = await service.enrichWord(word);
+      final enrichment = await WordEnrichmentService.enrichWord(word);
 
       final id = await DatabaseHelper.instance.addWordWithEnrichment(
         wordStem: word,
@@ -60,6 +58,16 @@ class _AddWordScreenState extends State<AddWordScreen> {
       }
 
       Navigator.pop(context, word);
+    } on MissingApiKeyException {
+      if (!mounted) return;
+      _showMessage(
+        kIsWeb
+            ? "Server OpenRouter key is missing. Configure it on the server."
+            : "OpenRouter key missing. Add one in Settings.",
+      );
+    } on NotAuthenticatedException {
+      if (!mounted) return;
+      _showMessage("Sign in required to add words.");
     } on InvalidApiKeyException {
       if (!mounted) return;
       _showMessage("Invalid OpenRouter API key. Check Settings.");

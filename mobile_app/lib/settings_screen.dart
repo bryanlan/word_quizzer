@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'openrouter_service.dart';
@@ -455,68 +456,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 24),
-            const Text(
-              "OpenRouter API Key",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              "Used to generate definitions, examples, and distractors on-device.",
-              style: TextStyle(color: Colors.grey[400]),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: apiKeyController,
-              obscureText: !showApiKey,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                hintText: "sk-or-...",
-                suffixIcon: IconButton(
-                  icon: Icon(showApiKey ? Icons.visibility_off : Icons.visibility),
-                  onPressed: () {
-                    setState(() {
-                      showApiKey = !showApiKey;
-                    });
-                  },
+            if (!kIsWeb) ...[
+              const Text(
+                "OpenRouter API Key",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Used to generate definitions, examples, and distractors on-device.",
+                style: TextStyle(color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: apiKeyController,
+                obscureText: !showApiKey,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  hintText: "sk-or-...",
+                  suffixIcon: IconButton(
+                    icon: Icon(showApiKey ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        showApiKey = !showApiKey;
+                      });
+                    },
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _saveApiKey,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      foregroundColor: Colors.white,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _saveApiKey,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text("Save Key"),
                     ),
-                    child: const Text("Save Key"),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _clearApiKey,
-                    child: const Text("Clear Key"),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _clearApiKey,
+                      child: const Text("Clear Key"),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: isTestingKey ? null : _testApiKey,
-                child: isTestingKey
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text("Test Key"),
+                ],
               ),
-            ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: isTestingKey ? null : _testApiKey,
+                  child: isTestingKey
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text("Test Key"),
+                ),
+              ),
+            ] else ...[
+              const Text(
+                "OpenRouter (Server)",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "The web app uses a server-managed OpenRouter key.",
+                style: TextStyle(color: Colors.grey[400]),
+              ),
+            ],
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 24),

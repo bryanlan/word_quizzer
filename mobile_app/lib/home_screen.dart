@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'db_helper.dart';
@@ -8,6 +9,7 @@ import 'word_list_screen.dart';
 import 'add_word_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'db_import.dart';
+import 'word_enrichment_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool isLoading = true;
   String displayName = "Scholar";
   String apiKey = '';
+  bool canAddWord = false;
   int quizzesToday = 0;
 
   @override
@@ -59,8 +62,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadApiKey() async {
     final prefs = await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final configured = await WordEnrichmentService.serverKeyConfigured();
+      if (!mounted) return;
+      setState(() {
+        apiKey = '';
+        canAddWord = configured;
+      });
+      return;
+    }
     setState(() {
       apiKey = prefs.getString('openrouter_api_key') ?? '';
+      canAddWord = apiKey.trim().isNotEmpty;
     });
   }
 
@@ -129,16 +142,18 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: Icon(
               Icons.add,
-              color: apiKey.trim().isEmpty ? Colors.grey : null,
+              color: canAddWord ? null : Colors.grey,
             ),
             onPressed: () {
-              if (apiKey.trim().isEmpty) {
+              if (!canAddWord) {
                 showDialog(
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text("OpenRouter Key Required"),
-                    content: const Text(
-                      "Add your OpenRouter API key in Settings to create new words.",
+                    content: Text(
+                      kIsWeb
+                          ? "The server OpenRouter key isn't configured yet."
+                          : "Add your OpenRouter API key in Settings to create new words.",
                     ),
                     actions: [
                       TextButton(
@@ -153,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => AddWordScreen(apiKey: apiKey),
+                  builder: (context) => const AddWordScreen(),
                 ),
               ).then((result) {
                 _refreshStats();
