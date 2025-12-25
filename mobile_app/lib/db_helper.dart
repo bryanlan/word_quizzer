@@ -27,6 +27,7 @@ class DatabaseHelper {
   Future<Database> get database async {
     if (_database != null) return _database!;
     final db = await _initDB('vocab_master.db');
+    await _ensureBaseSchema(db);
     await _ensureOnDeckStatusSchema(db);
     await _ensureStudyLogSchema(db);
     await _ensureStatusLogSchema(db);
@@ -57,9 +58,81 @@ class DatabaseHelper {
     await importDatabaseFile(sourcePath, path);
 
     _database = await _initDB('vocab_master.db');
+    await _ensureBaseSchema(_database!);
     await _ensureOnDeckStatusSchema(_database!);
     await _ensureStudyLogSchema(_database!);
     await _ensureStatusLogSchema(_database!);
+  }
+
+  Future<void> _ensureBaseSchema(Database db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_stem TEXT UNIQUE NOT NULL,
+        original_context TEXT,
+        book_title TEXT,
+        definition TEXT,
+        phonetic TEXT,
+        status TEXT CHECK(status IN ('New', 'On Deck', 'Learning', 'Proficient', 'Adept', 'Mastered', 'Ignored', 'Pau(S)ed')) DEFAULT 'New',
+        bucket_date DATE,
+        next_review_date DATE,
+        difficulty_score INTEGER,
+        priority_tier INTEGER,
+        status_correct_streak INTEGER DEFAULT 0,
+        manual_flag BOOLEAN DEFAULT 0,
+        server_word_id INTEGER,
+        updated_at TEXT
+      );
+    """);
+
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS examples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER,
+        sentence TEXT,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      );
+    """);
+
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS distractors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER,
+        text TEXT,
+        is_plausible BOOLEAN DEFAULT 1,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      );
+    """);
+
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS study_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER,
+        result TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        session_id TEXT,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      );
+    """);
+
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS status_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        word_id INTEGER,
+        from_status TEXT,
+        to_status TEXT,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      );
+    """);
+
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS insults (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT,
+        severity INTEGER
+      );
+    """);
   }
 
   Future<void> _ensureStudyLogSchema(Database db) async {
