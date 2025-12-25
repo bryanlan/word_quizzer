@@ -88,6 +88,27 @@ class _HomeScreenState extends State<HomeScreen> {
     return "Night";
   }
 
+  String _buildAddWordSummary(
+    List<String> added,
+    List<String> skipped,
+    List<String> failed,
+  ) {
+    final parts = <String>[];
+    if (added.isNotEmpty) {
+      parts.add('Added ${added.length}');
+    }
+    if (skipped.isNotEmpty) {
+      parts.add('Skipped ${skipped.length}');
+    }
+    if (failed.isNotEmpty) {
+      parts.add('Failed ${failed.length}');
+    }
+    if (parts.isEmpty) {
+      return '';
+    }
+    return '${parts.join('. ')}.';
+  }
+
   Future<void> _importDb() async {
     if (!supportsDatabaseFileImport) {
       showDialog(
@@ -172,7 +193,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ).then((result) {
                 _refreshStats();
-                if (result is String && result.trim().isNotEmpty) {
+                if (result is Map) {
+                  final added = (result['added'] as List?)?.cast<String>() ?? [];
+                  final skipped = (result['skipped'] as List?)?.cast<String>() ?? [];
+                  final failed = (result['failed'] as List?)?.cast<String>() ?? [];
+                  final message = _buildAddWordSummary(added, skipped, failed);
+                  if (message.isNotEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(message)),
+                    );
+                  }
+                } else if (result is String && result.trim().isNotEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Added \"$result\".')),
                   );

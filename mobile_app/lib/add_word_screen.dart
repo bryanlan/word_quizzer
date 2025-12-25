@@ -16,6 +16,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
   String status = 'Learning';
   int tier = 3;
   bool isSaving = false;
+  static const int _maxWords = 10;
 
   @override
   void dispose() {
@@ -24,9 +25,13 @@ class _AddWordScreenState extends State<AddWordScreen> {
   }
 
   Future<void> _addWord() async {
-    final word = wordController.text.trim();
-    if (word.isEmpty) {
-      _showMessage("Please enter a word.");
+    final words = _parseWords(wordController.text);
+    if (words.isEmpty) {
+      _showMessage("Please enter at least one word.");
+      return;
+    }
+    if (words.length > _maxWords) {
+      _showMessage("Please limit to $_maxWords words per batch.");
       return;
     }
 
@@ -34,47 +39,60 @@ class _AddWordScreenState extends State<AddWordScreen> {
       isSaving = true;
     });
 
+    final added = <String>[];
+    final skipped = <String>[];
+    final failed = <String>[];
+
     try {
-      final exists = await DatabaseHelper.instance.wordExists(word);
-      if (exists) {
-        _showMessage("That word already exists.");
-        return;
+      for (final word in words) {
+        final exists = await DatabaseHelper.instance.wordExists(word);
+        if (exists) {
+          skipped.add(word);
+          continue;
+        }
+
+        try {
+          final enrichment = await WordEnrichmentService.enrichWord(word);
+          final id = await DatabaseHelper.instance.addWordWithEnrichment(
+            wordStem: word,
+            status: status,
+            priorityTier: tier,
+            definition: enrichment.definition,
+            examples: enrichment.examples,
+            distractors: enrichment.distractors,
+          );
+
+          if (!mounted) return;
+          if (id == null) {
+            skipped.add(word);
+            continue;
+          }
+          added.add(word);
+        } on MissingApiKeyException {
+          if (!mounted) return;
+          _showMessage(
+            kIsWeb
+                ? "Server OpenRouter key is missing. Configure it on the server."
+                : "OpenRouter key missing. Add one in Settings.",
+          );
+          return;
+        } on NotAuthenticatedException {
+          if (!mounted) return;
+          _showMessage("Sign in required to add words.");
+          return;
+        } on InvalidApiKeyException {
+          if (!mounted) return;
+          _showMessage("Invalid OpenRouter API key. Check Settings.");
+          return;
+        } catch (e) {
+          failed.add(word);
+          if (!mounted) return;
+          _showMessage("Unable to add \"$word\": $e");
+        }
       }
-
-      final enrichment = await WordEnrichmentService.enrichWord(word);
-
-      final id = await DatabaseHelper.instance.addWordWithEnrichment(
-        wordStem: word,
-        status: status,
-        priorityTier: tier,
-        definition: enrichment.definition,
-        examples: enrichment.examples,
-        distractors: enrichment.distractors,
-      );
-
-      if (!mounted) return;
-      if (id == null) {
-        _showMessage("That word already exists.");
-        return;
-      }
-
-      Navigator.pop(context, word);
-    } on MissingApiKeyException {
-      if (!mounted) return;
-      _showMessage(
-        kIsWeb
-            ? "Server OpenRouter key is missing. Configure it on the server."
-            : "OpenRouter key missing. Add one in Settings.",
-      );
-    } on NotAuthenticatedException {
-      if (!mounted) return;
-      _showMessage("Sign in required to add words.");
-    } on InvalidApiKeyException {
-      if (!mounted) return;
-      _showMessage("Invalid OpenRouter API key. Check Settings.");
     } catch (e) {
       if (!mounted) return;
-      _showMessage("Unable to add word: $e");
+      _showMessage("Unable to add words: $e");
     } finally {
       if (mounted) {
         setState(() {
@@ -82,10 +100,63 @@ class _AddWordScreenState extends State<AddWordScreen> {
         });
       }
     }
+
+    if (!mounted) return;
+    if (added.isEmpty) {
+      _showMessage(_buildSummaryMessage(added, skipped, failed));
+      return;
+    }
+    Navigator.pop(
+      context,
+      {
+        'added': added,
+        'skipped': skipped,
+        'failed': failed,
+      },
+    );
   }
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  List<String> _parseWords(String input) {
+    final results = <String>[];
+    final seen = <String>{};
+    for (final raw in input.split(',')) {
+      final cleaned = raw.trim();
+      if (cleaned.isEmpty) {
+        continue;
+      }
+      final key = cleaned.toLowerCase();
+      if (seen.contains(key)) {
+        continue;
+      }
+      seen.add(key);
+      results.add(cleaned);
+    }
+    return results;
+  }
+
+  String _buildSummaryMessage(
+    List<String> added,
+    List<String> skipped,
+    List<String> failed,
+  ) {
+    final parts = <String>[];
+    if (added.isNotEmpty) {
+      parts.add('Added ${added.length}.');
+    }
+    if (skipped.isNotEmpty) {
+      parts.add('Skipped ${skipped.length} existing.');
+    }
+    if (failed.isNotEmpty) {
+      parts.add('Failed ${failed.length}.');
+    }
+    if (parts.isEmpty) {
+      return 'No new words added.';
+    }
+    return parts.join(' ');
   }
 
   @override
@@ -98,7 +169,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "Word",
+              "Words",
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -107,7 +178,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
               textCapitalization: TextCapitalization.none,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                hintText: "Enter a word",
+                hintText: "Enter up to 10 words, comma-separated",
               ),
             ),
             const SizedBox(height: 20),
