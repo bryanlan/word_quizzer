@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'openrouter_service.dart';
 import 'sync_service.dart';
+import 'auth_service.dart';
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,12 +25,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController apiKeyController = TextEditingController();
   final TextEditingController displayNameController = TextEditingController();
   final TextEditingController syncUrlController = TextEditingController();
-  final TextEditingController syncTokenController = TextEditingController();
-  bool showSyncToken = false;
   bool isTestingKey = false;
   bool isTestingSync = false;
   bool isSyncing = false;
   String lastSyncAt = '';
+  String authStatusLabel = 'Not signed in';
+  String authSubject = '';
 
   @override
   void initState() {
@@ -51,9 +53,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       displayNameController.text = prefs.getString('display_name') ?? '';
       syncUrlController.text =
           prefs.getString('sync_server_url') ?? 'https://word-quizzer-api.bryanlangley.org';
-      syncTokenController.text = prefs.getString('sync_jwt') ?? '';
       lastSyncAt = prefs.getString('last_sync_at') ?? '';
+      final token = prefs.getString(AuthService.tokenKey) ?? '';
+      if (token.isEmpty) {
+        authStatusLabel = 'Not signed in';
+        authSubject = '';
+      } else if (AuthService.isTokenExpired(token)) {
+        authStatusLabel = 'Session expired';
+        authSubject = _shortenSubject(AuthService.tokenSubject(token));
+      } else {
+        authStatusLabel = 'Signed in';
+        authSubject = _shortenSubject(AuthService.tokenSubject(token));
+      }
     });
+  }
+
+  String _shortenSubject(String? subject) {
+    if (subject == null || subject.isEmpty) {
+      return '';
+    }
+    if (subject.length <= 12) {
+      return subject;
+    }
+    return '${subject.substring(0, 6)}...${subject.substring(subject.length - 4)}';
   }
 
   Future<void> _saveSetting(String key, int value) async {
@@ -145,31 +167,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveSyncSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('sync_server_url', syncUrlController.text.trim());
-    await prefs.setString('sync_jwt', syncTokenController.text.trim());
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Sync settings saved.')),
     );
   }
 
-  Future<void> _clearSyncToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('sync_jwt');
-    setState(() {
-      syncTokenController.text = '';
-    });
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sync token cleared.')),
-    );
-  }
-
   Future<void> _testSync() async {
     final url = syncUrlController.text.trim();
-    final token = syncTokenController.text.trim();
+    final token = await AuthService.getToken() ?? '';
     if (url.isEmpty || token.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter server URL and JWT token.')),
+        const SnackBar(content: Text('Sign in to sync.')),
+      );
+      return;
+    }
+    if (AuthService.isTokenExpired(token)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session expired. Please sign in again.')),
       );
       return;
     }
@@ -199,10 +214,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _runSync() async {
     final url = syncUrlController.text.trim();
-    final token = syncTokenController.text.trim();
+    final token = await AuthService.getToken() ?? '';
     if (url.isEmpty || token.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter server URL and JWT token.')),
+        const SnackBar(content: Text('Sign in to sync.')),
+      );
+      return;
+    }
+    if (AuthService.isTokenExpired(token)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session expired. Please sign in again.')),
       );
       return;
     }
@@ -218,6 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       setState(() {
         lastSyncAt = now;
+        authStatusLabel = 'Signed in';
       });
       final secondPassNote = summary.hadSecondPass ? ' (two-pass)' : '';
       ScaffoldMessenger.of(context).showSnackBar(
@@ -247,7 +269,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     apiKeyController.dispose();
     displayNameController.dispose();
     syncUrlController.dispose();
-    syncTokenController.dispose();
     super.dispose();
   }
 
@@ -517,21 +538,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: syncTokenController,
-              obscureText: !showSyncToken,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: "JWT Token",
-                suffixIcon: IconButton(
-                  icon: Icon(showSyncToken ? Icons.visibility_off : Icons.visibility),
-                  onPressed: () {
-                    setState(() {
-                      showSyncToken = !showSyncToken;
-                    });
-                  },
-                ),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(authStatusLabel, style: TextStyle(color: Colors.grey[400])),
+                if (authSubject.isNotEmpty)
+                  Text(
+                    authSubject,
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+              ],
             ),
             const SizedBox(height: 12),
             Row(
@@ -549,8 +565,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: _clearSyncToken,
-                    child: const Text("Clear Token"),
+                    onPressed: () async {
+                      await AuthService.clearToken();
+                      if (!mounted) return;
+                      setState(() {
+                        authStatusLabel = 'Not signed in';
+                        authSubject = '';
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Signed out.')),
+                      );
+                      if (!mounted) return;
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        (route) => false,
+                      );
+                    },
+                    child: const Text("Sign Out"),
                   ),
                 ),
               ],
@@ -560,14 +591,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: isTestingSync ? null : _testSync,
-                    child: isTestingSync
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text("Test Sync"),
+                    onPressed: () async {
+                      try {
+                        await AuthService.startGoogleLogin();
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Login unavailable: $e')),
+                        );
+                      }
+                    },
+                    child: const Text("Sign in with Google"),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -588,6 +622,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: isTestingSync ? null : _testSync,
+                child: isTestingSync
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text("Test Sync"),
+              ),
             ),
             if (lastSyncAt.isNotEmpty)
               Padding(

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
 import 'db_factory.dart';
+import 'auth_service.dart';
+import 'auth_gate.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   configureDatabaseFactory();
+  await AuthService.handleAuthRedirect();
   runApp(const MyApp());
 }
 
@@ -25,7 +28,7 @@ class MyApp extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
-      home: const HomeScreen(),
+      home: const AuthGate(),
     );
   }
 }
