@@ -10,6 +10,9 @@ import 'add_word_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'db_import.dart';
 import 'word_enrichment_service.dart';
+import 'auth_service.dart';
+import 'sync_service.dart';
+import 'pwa_update.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -86,6 +89,34 @@ class _HomeScreenState extends State<HomeScreen> {
       apiKey = prefs.getString('openrouter_api_key') ?? '';
       canAddWord = apiKey.trim().isNotEmpty;
     });
+  }
+
+  Future<void> _runSilentSync() async {
+    final token = await AuthService.getToken();
+    if (token == null || token.isEmpty || AuthService.isTokenExpired(token)) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final url = prefs.getString('sync_server_url') ??
+        'https://word-quizzer-api.bryanlangley.org';
+    if (url.trim().isEmpty) {
+      return;
+    }
+    try {
+      final service = SyncService(baseUrl: url, token: token);
+      await service.sync();
+      await prefs.setString('last_sync_at', DateTime.now().toIso8601String());
+    } catch (_) {
+      // Silent refresh.
+    }
+  }
+
+  Future<void> _handlePullToRefresh() async {
+    await _runSilentSync();
+    await _refreshStats();
+    if (kIsWeb) {
+      await refreshApp();
+    }
   }
 
   String _timeOfDayLabel() {
@@ -256,107 +287,118 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    "Good ${_timeOfDayLabel()}, $displayName.",
-                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      "Quizzes taken today: $quizzesToday",
-                      style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      _buildStatCard(
-                        "Total Words",
-                        stats['total'].toString(),
-                        Colors.blueAccent,
-                        onTap: () => _openWordList("All"),
+          : RefreshIndicator(
+              onRefresh: _handlePullToRefresh,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            "Good ${_timeOfDayLabel()}, $displayName.",
+                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              "Quizzes taken today: $quizzesToday",
+                              style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              _buildStatCard(
+                                "Total Words",
+                                stats['total'].toString(),
+                                Colors.blueAccent,
+                                onTap: () => _openWordList("All"),
+                              ),
+                              const SizedBox(width: 10),
+                              _buildStatCard(
+                                "On Deck",
+                                stats['on_deck'].toString(),
+                                Colors.amberAccent,
+                                onTap: () => _openWordList("On Deck"),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              _buildStatCard(
+                                "Learning",
+                                stats['learning'].toString(),
+                                Colors.orangeAccent,
+                                onTap: () => _openWordList("Learning"),
+                              ),
+                              const SizedBox(width: 10),
+                              _buildStatCard(
+                                "Proficient",
+                                stats['proficient'].toString(),
+                                Colors.tealAccent,
+                                onTap: () => _openWordList("Proficient"),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              _buildStatCard(
+                                "Adept",
+                                stats['adept'].toString(),
+                                Colors.purpleAccent,
+                                onTap: () => _openWordList("Adept"),
+                              ),
+                              const SizedBox(width: 10),
+                              _buildStatCard("Mastered", stats['mastered'].toString(), Colors.greenAccent),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              "Today's score: $todayScore • High score: $highScore",
+                              style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
+                            ),
+                          ),
+                          const Spacer(),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const QuizScreen()),
+                              ).then((_) => _refreshStats());
+                            },
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              backgroundColor: Colors.teal,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text(
+                              "START DAILY QUIZ",
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      _buildStatCard(
-                        "On Deck",
-                        stats['on_deck'].toString(),
-                        Colors.amberAccent,
-                        onTap: () => _openWordList("On Deck"),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      _buildStatCard(
-                        "Learning",
-                        stats['learning'].toString(),
-                        Colors.orangeAccent,
-                        onTap: () => _openWordList("Learning"),
-                      ),
-                      const SizedBox(width: 10),
-                      _buildStatCard(
-                        "Proficient",
-                        stats['proficient'].toString(),
-                        Colors.tealAccent,
-                        onTap: () => _openWordList("Proficient"),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      _buildStatCard(
-                        "Adept",
-                        stats['adept'].toString(),
-                        Colors.purpleAccent,
-                        onTap: () => _openWordList("Adept"),
-                      ),
-                      const SizedBox(width: 10),
-                      _buildStatCard("Mastered", stats['mastered'].toString(), Colors.greenAccent),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      "Today's score: $todayScore • High score: $highScore",
-                      style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
                     ),
                   ),
-                  const Spacer(),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const QuizScreen()),
-                      ).then((_) => _refreshStats());
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 24),
-                      backgroundColor: Colors.teal,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text(
-                      "START DAILY QUIZ",
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
