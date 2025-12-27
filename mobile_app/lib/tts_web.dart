@@ -28,21 +28,25 @@ Future<List<TtsVoice>> getWebVoices() async {
   }
 
   final completer = Completer<List<TtsVoice>>();
-  late StreamSubscription<html.Event> sub;
-  sub = synthesis.onVoicesChanged.listen((_) {
+  var attempts = 0;
+  Timer? timer;
+  timer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    attempts += 1;
     final updated = synthesis.getVoices();
-    if (updated.isNotEmpty && !completer.isCompleted) {
-      completer.complete(mapVoices(updated));
+    if (updated.isNotEmpty) {
+      timer?.cancel();
+      if (!completer.isCompleted) {
+        completer.complete(mapVoices(updated));
+      }
+      return;
+    }
+    if (attempts >= 10) {
+      timer?.cancel();
+      if (!completer.isCompleted) {
+        completer.complete(mapVoices(updated));
+      }
     }
   });
 
-  Future.delayed(const Duration(seconds: 2)).then((_) {
-    if (!completer.isCompleted) {
-      completer.complete(mapVoices(synthesis.getVoices()));
-    }
-  });
-
-  final result = await completer.future;
-  await sub.cancel();
-  return result;
+  return completer.future;
 }
