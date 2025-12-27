@@ -290,6 +290,13 @@ class _QuizScreenState extends State<QuizScreen> {
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         title: Text("Word ${currentIndex + 1}/${sessionWords.length}"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.volume_up),
+            onPressed: () => _speakWord(currentWord.wordStem),
+            tooltip: 'Pronounce',
+          ),
+        ],
       ),
       body: Container(
         color: feedbackColor, // Flash effect
