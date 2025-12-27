@@ -290,13 +290,6 @@ class _QuizScreenState extends State<QuizScreen> {
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         title: Text("Word ${currentIndex + 1}/${sessionWords.length}"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.volume_up),
-            onPressed: () => _speakWord(currentWord.wordStem),
-            tooltip: 'Pronounce',
-          ),
-        ],
       ),
       body: Container(
         color: feedbackColor, // Flash effect
@@ -311,10 +304,8 @@ class _QuizScreenState extends State<QuizScreen> {
                   children: [
                     if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
                     const SizedBox(height: 24),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           currentWord.wordStem,
@@ -323,10 +314,10 @@ class _QuizScreenState extends State<QuizScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
-                          onPressed: () => _speakWord(currentWord.wordStem),
-                          tooltip: 'Pronounce',
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => _speakWord(currentWord.wordStem),
+                          child: const Icon(Icons.volume_up, color: Colors.tealAccent),
                         ),
                       ],
                     ),
