@@ -31,6 +31,7 @@ class DatabaseHelper {
     await _ensureOnDeckStatusSchema(db);
     await _ensureStudyLogSchema(db);
     await _ensureStatusLogSchema(db);
+    await _ensureScoreLogSchema(db);
     _database = db;
     return _database!;
   }
@@ -62,6 +63,7 @@ class DatabaseHelper {
     await _ensureOnDeckStatusSchema(_database!);
     await _ensureStudyLogSchema(_database!);
     await _ensureStatusLogSchema(_database!);
+    await _ensureScoreLogSchema(_database!);
   }
 
   Future<void> _ensureBaseSchema(Database db) async {
@@ -127,6 +129,19 @@ class DatabaseHelper {
     """);
 
     await db.execute("""
+      CREATE TABLE IF NOT EXISTS score_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER,
+        points INTEGER NOT NULL,
+        reason TEXT,
+        mode TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        session_id TEXT,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      );
+    """);
+
+    await db.execute("""
       CREATE TABLE IF NOT EXISTS insults (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT,
@@ -155,6 +170,21 @@ class DatabaseHelper {
         word_id INTEGER,
         from_status TEXT,
         to_status TEXT,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      )
+    """);
+  }
+
+  Future<void> _ensureScoreLogSchema(Database db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS score_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER,
+        points INTEGER NOT NULL,
+        reason TEXT,
+        mode TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        session_id TEXT,
         FOREIGN KEY (word_id) REFERENCES words (id)
       )
     """);
@@ -843,6 +873,16 @@ class DatabaseHelper {
     }
 
     await logResult(wordId, isCorrect, sessionId: sessionId);
+    final points = _pointsForAnswer(isCorrect, allowStreakIncrement);
+    if (points > 0) {
+      await logScore(
+        wordId,
+        points,
+        reason: _reasonForAnswer(isCorrect, allowStreakIncrement),
+        mode: 'multiple_choice',
+        sessionId: sessionId,
+      );
+    }
 
     final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
@@ -930,6 +970,16 @@ class DatabaseHelper {
     }
 
     await logResult(wordId, isCorrect, sessionId: sessionId);
+    final points = _pointsForSelfGrade(grade);
+    if (points > 0) {
+      await logScore(
+        wordId,
+        points,
+        reason: _reasonForSelfGrade(grade),
+        mode: 'self_graded',
+        sessionId: sessionId,
+      );
+    }
 
     final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
@@ -967,6 +1017,42 @@ class DatabaseHelper {
     await _promoteOnDeckToLearning(db, activeLearningLimit);
   }
 
+  int _pointsForAnswer(bool isCorrect, bool allowStreakIncrement) {
+    if (!isCorrect) {
+      return 0;
+    }
+    return allowStreakIncrement ? 10 : 6;
+  }
+
+  String _reasonForAnswer(bool isCorrect, bool allowStreakIncrement) {
+    if (!isCorrect) {
+      return 'mc_wrong';
+    }
+    return allowStreakIncrement ? 'mc_correct' : 'mc_correct_revealed';
+  }
+
+  int _pointsForSelfGrade(String grade) {
+    switch (grade) {
+      case 'easy':
+        return 10;
+      case 'hard':
+        return 6;
+      default:
+        return 0;
+    }
+  }
+
+  String _reasonForSelfGrade(String grade) {
+    switch (grade) {
+      case 'easy':
+        return 'self_easy';
+      case 'hard':
+        return 'self_hard';
+      default:
+        return 'self_failed';
+    }
+  }
+
   Future<void> logResult(int wordId, bool isCorrect, {String? sessionId}) async {
     final db = await database;
     if (!await _hasTable(db, 'study_log')) {
@@ -975,6 +1061,27 @@ class DatabaseHelper {
     await db.insert('study_log', {
       'word_id': wordId,
       'result': isCorrect ? 'Correct' : 'Incorrect',
+      'timestamp': DateTime.now().toIso8601String(),
+      'session_id': sessionId,
+    });
+  }
+
+  Future<void> logScore(
+    int wordId,
+    int points, {
+    String? reason,
+    String? mode,
+    String? sessionId,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'score_log')) {
+      return;
+    }
+    await db.insert('score_log', {
+      'word_id': wordId,
+      'points': points,
+      'reason': reason,
+      'mode': mode,
       'timestamp': DateTime.now().toIso8601String(),
       'session_id': sessionId,
     });
@@ -1461,6 +1568,59 @@ class DatabaseHelper {
       return 0;
     }
     return rows.first['count'] as int? ?? 0;
+  }
+
+  Future<int> getScoreForDate(DateTime date, {DateTime? since}) async {
+    final db = await database;
+    if (!await _hasTable(db, 'score_log')) {
+      return 0;
+    }
+
+    final day = date.toIso8601String().split('T')[0];
+    final whereParts = <String>["DATE(timestamp) = ?"];
+    final args = <Object>[day];
+    if (since != null) {
+      whereParts.add("timestamp >= ?");
+      args.add(since.toIso8601String());
+    }
+
+    final rows = await db.rawQuery('''
+      SELECT SUM(points) as total
+      FROM score_log
+      WHERE ${whereParts.join(' AND ')}
+    ''', args);
+    if (rows.isEmpty) {
+      return 0;
+    }
+    return rows.first['total'] as int? ?? 0;
+  }
+
+  Future<int> getHighScore({DateTime? since}) async {
+    final db = await database;
+    if (!await _hasTable(db, 'score_log')) {
+      return 0;
+    }
+
+    final whereParts = <String>[];
+    final args = <Object>[];
+    if (since != null) {
+      whereParts.add("timestamp >= ?");
+      args.add(since.toIso8601String());
+    }
+
+    final whereSql = whereParts.isEmpty ? '' : 'WHERE ${whereParts.join(' AND ')}';
+    final rows = await db.rawQuery('''
+      SELECT DATE(timestamp) as day, SUM(points) as total
+      FROM score_log
+      $whereSql
+      GROUP BY day
+      ORDER BY total DESC
+      LIMIT 1
+    ''', args);
+    if (rows.isEmpty) {
+      return 0;
+    }
+    return rows.first['total'] as int? ?? 0;
   }
 
   Future<bool> wordExists(String wordStem) async {

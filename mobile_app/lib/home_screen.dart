@@ -33,6 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String apiKey = '';
   bool canAddWord = false;
   int quizzesToday = 0;
+  int todayScore = 0;
+  int highScore = 0;
 
   @override
   void initState() {
@@ -45,9 +47,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _refreshStats() async {
     final s = await DatabaseHelper.instance.getStats();
     final count = await DatabaseHelper.instance.getQuizCountForDate(DateTime.now());
+    final prefs = await SharedPreferences.getInstance();
+    final resetAtStr = prefs.getString('score_reset_at');
+    final resetAt = resetAtStr == null ? null : DateTime.tryParse(resetAtStr);
+    final todayScoreValue = await DatabaseHelper.instance
+        .getScoreForDate(DateTime.now(), since: resetAt);
+    final highScoreValue =
+        await DatabaseHelper.instance.getHighScore(since: resetAt);
     setState(() {
       stats = s;
       quizzesToday = count;
+      todayScore = todayScoreValue;
+      highScore = highScoreValue;
       isLoading = false;
     });
   }
@@ -85,7 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (hour >= 12 && hour < 18) {
       return "Afternoon";
     }
-    return "Night";
+    return "Evening";
   }
 
   String _buildAddWordSummary(
@@ -225,12 +236,13 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-               Navigator.push(
+              Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
               ).then((_) {
                 _loadApiKey();
                 _loadDisplayName();
+                _refreshStats();
               });
             },
             tooltip: 'Settings',
@@ -313,6 +325,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 10),
                       _buildStatCard("Mastered", stats['mastered'].toString(), Colors.greenAccent),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      "Today's score: $todayScore • High score: $highScore",
+                      style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
+                    ),
                   ),
                   const Spacer(),
                   ElevatedButton(

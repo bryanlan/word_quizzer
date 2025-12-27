@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'openrouter_service.dart';
+import 'db_helper.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
 import 'login_screen.dart';
@@ -23,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int promoteProficient = 4;
   int promoteAdept = 5;
   int withinStageBias = 0;
+  int highScore = 0;
   bool showApiKey = false;
   final TextEditingController apiKeyController = TextEditingController();
   final TextEditingController displayNameController = TextEditingController();
@@ -42,6 +44,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    final resetAtStr = prefs.getString('score_reset_at');
+    final resetAt = resetAtStr == null ? null : DateTime.tryParse(resetAtStr);
+    final scoreValue = await DatabaseHelper.instance.getHighScore(since: resetAt);
     setState(() {
       quizLength = prefs.getInt('quiz_length') ?? 20;
       maxLearning = prefs.getInt('max_learning') ?? 20;
@@ -52,6 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       promoteProficient = prefs.getInt('promote_proficient_correct') ?? 4;
       promoteAdept = prefs.getInt('promote_adept_correct') ?? 5;
       withinStageBias = prefs.getInt('within_stage_bias') ?? 1;
+      highScore = scoreValue;
       apiKeyController.text = prefs.getString('openrouter_api_key') ?? '';
       displayNameController.text = prefs.getString('display_name') ?? '';
       syncUrlController.text =
@@ -95,6 +101,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveSetting(String key, int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(key, value);
+  }
+
+  Future<void> _resetHighScore() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    await prefs.setString('score_reset_at', now.toIso8601String());
+    final scoreValue = await DatabaseHelper.instance.getHighScore(since: now);
+    if (!mounted) return;
+    setState(() {
+      highScore = scoreValue;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('High score reset.')),
+    );
   }
 
   Future<void> _saveApiKey() async {
@@ -455,6 +475,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _saveSetting('promote_adept_correct', value);
                 setState(() => promoteAdept = value);
               },
+            ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 24),
+            const Text(
+              "Score",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "High score: $highScore",
+              style: const TextStyle(color: Colors.tealAccent, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _resetHighScore,
+                child: const Text("Reset High Score"),
+              ),
             ),
             const SizedBox(height: 24),
             const Divider(),
