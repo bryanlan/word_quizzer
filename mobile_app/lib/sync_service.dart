@@ -10,6 +10,7 @@ class SyncSummary {
   final int examplesCreated;
   final int studyLogCreated;
   final int statusLogCreated;
+  final int scoreLogCreated;
   final bool hadSecondPass;
 
   SyncSummary({
@@ -19,6 +20,7 @@ class SyncSummary {
     required this.examplesCreated,
     required this.studyLogCreated,
     required this.statusLogCreated,
+    required this.scoreLogCreated,
     required this.hadSecondPass,
   });
 }
@@ -94,6 +96,7 @@ class SyncService {
       examplesCreated: finalResult['examples_created'] ?? 0,
       studyLogCreated: finalResult['study_log_created'] ?? 0,
       statusLogCreated: finalResult['status_log_created'] ?? 0,
+      scoreLogCreated: finalResult['score_log_created'] ?? 0,
       hadSecondPass: hadSecondPass,
     );
   }
@@ -462,6 +465,66 @@ class SyncService {
           'timestamp': row['timestamp'] ?? now,
         });
       }
+
+      final localScoreRows = await txn.query(
+        'score_log',
+        columns: ['word_id', 'points', 'reason', 'mode', 'timestamp', 'session_id'],
+      );
+      final localScoreKeys = <String>{};
+      for (final row in localScoreRows) {
+        final wordId = row['word_id'] as int?;
+        final stem = wordId == null ? null : stemByLocalId[wordId];
+        if (stem == null || stem.isEmpty) {
+          continue;
+        }
+        final key = [
+          stem,
+          row['points']?.toString() ?? '',
+          row['reason']?.toString() ?? '',
+          row['mode']?.toString() ?? '',
+          row['timestamp']?.toString() ?? '',
+          row['session_id']?.toString() ?? '',
+        ].join('|');
+        localScoreKeys.add(key);
+      }
+
+      final serverScoreRows = (exportData['score_log'] as List<dynamic>? ?? [])
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+      for (final row in serverScoreRows) {
+        final serverWordId = row['word_id'];
+        if (serverWordId is! int) {
+          continue;
+        }
+        final stem = serverIdToStem[serverWordId];
+        if (stem == null) {
+          continue;
+        }
+        final localId = localWordIdByStemFinal[stem];
+        if (localId == null) {
+          continue;
+        }
+        final key = [
+          stem,
+          row['points']?.toString() ?? '',
+          row['reason']?.toString() ?? '',
+          row['mode']?.toString() ?? '',
+          row['timestamp']?.toString() ?? '',
+          row['session_id']?.toString() ?? '',
+        ].join('|');
+        if (localScoreKeys.contains(key)) {
+          continue;
+        }
+        localScoreKeys.add(key);
+        await txn.insert('score_log', {
+          'word_id': localId,
+          'points': row['points'] ?? 0,
+          'reason': row['reason'],
+          'mode': row['mode'],
+          'timestamp': row['timestamp'] ?? now,
+          'session_id': row['session_id'],
+        });
+      }
     });
 
     return newWordStems;
@@ -523,6 +586,7 @@ class SyncService {
     List<Map<String, dynamic>> distractors = [];
     List<Map<String, dynamic>> studyLog = [];
     List<Map<String, dynamic>> statusLog = [];
+    List<Map<String, dynamic>> scoreLog = [];
 
     if (requireServerId && wordIds.isNotEmpty) {
       final placeholders = List.filled(wordIds.length, '?').join(',');
@@ -581,6 +645,23 @@ class SyncService {
           'timestamp': row['timestamp'],
         };
       }).where((row) => row['word_id'] != null).toList();
+
+      final scoreRows = await db.rawQuery('''
+        SELECT l.points, l.reason, l.mode, l.timestamp, l.session_id, l.word_id
+        FROM score_log l
+        WHERE l.word_id IN ($placeholders)
+      ''', wordIds);
+      scoreLog = scoreRows.map((row) {
+        final localId = row['word_id'] as int;
+        return {
+          'word_id': wordIdByLocalId[localId],
+          'points': row['points'],
+          'reason': row['reason'],
+          'mode': row['mode'],
+          'timestamp': row['timestamp'],
+          'session_id': row['session_id'],
+        };
+      }).where((row) => row['word_id'] != null).toList();
     }
 
     final wordPayload = words.map((row) {
@@ -606,6 +687,7 @@ class SyncService {
       'examples': examples,
       'study_log': studyLog,
       'status_log': statusLog,
+      'score_log': scoreLog,
       'insults': [],
     };
   }
