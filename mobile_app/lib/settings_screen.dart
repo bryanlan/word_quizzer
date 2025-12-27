@@ -91,9 +91,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isLoadingVoices = true;
     });
     final voices = await TtsService.getVoices(flutterTts);
+    final prefs = await SharedPreferences.getInstance();
+    var selection = ttsSelection;
+    if (selection != 'auto' && !voices.any((voice) => voice.key == selection)) {
+      selection = 'auto';
+      await prefs.remove(TtsService.voiceKey);
+    }
     if (!mounted) return;
     setState(() {
       ttsVoices = voices;
+      ttsSelection = selection;
       isLoadingVoices = false;
     });
   }
@@ -337,6 +344,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await prefs.remove(TtsService.voiceKey);
       await TtsService.configure(flutterTts);
     } else {
+      if (ttsVoices.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No voices available yet.')),
+        );
+        return;
+      }
       final voice = ttsVoices.firstWhere(
         (v) => v.key == selection,
         orElse: () => ttsVoices.first,
@@ -561,11 +575,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 12),
             if (isLoadingVoices)
               const Center(child: CircularProgressIndicator())
-            else if (ttsVoices.isEmpty)
-              const Text(
-                "No voices available on this device.",
-                style: TextStyle(color: Colors.grey),
-              )
             else
               DropdownButtonFormField<String>(
                 value: ttsSelection,
@@ -586,6 +595,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _setVoiceSelection(value);
                 },
                 decoration: const InputDecoration(border: OutlineInputBorder()),
+              ),
+            if (!isLoadingVoices)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _loadVoices,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("Refresh voices"),
+                  ),
+                ),
+              ),
+            if (!isLoadingVoices && ttsVoices.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: Text(
+                  "No extra voices detected yet. Try refresh after playing a word.",
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             const SizedBox(height: 24),
             const Divider(),

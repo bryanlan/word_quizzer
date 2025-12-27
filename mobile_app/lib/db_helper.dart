@@ -32,6 +32,7 @@ class DatabaseHelper {
     await _ensureStudyLogSchema(db);
     await _ensureStatusLogSchema(db);
     await _ensureScoreLogSchema(db);
+    await _ensureQuizSessionSchema(db);
     _database = db;
     return _database!;
   }
@@ -64,6 +65,7 @@ class DatabaseHelper {
     await _ensureStudyLogSchema(_database!);
     await _ensureStatusLogSchema(_database!);
     await _ensureScoreLogSchema(_database!);
+    await _ensureQuizSessionSchema(_database!);
   }
 
   Future<void> _ensureBaseSchema(Database db) async {
@@ -186,6 +188,16 @@ class DatabaseHelper {
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         session_id TEXT,
         FOREIGN KEY (word_id) REFERENCES words (id)
+      )
+    """);
+  }
+
+  Future<void> _ensureQuizSessionSchema(Database db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS quiz_sessions (
+        session_id TEXT PRIMARY KEY,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME
       )
     """);
   }
@@ -993,6 +1005,45 @@ class DatabaseHelper {
     return null;
   }
 
+  Future<void> recordQuizSessionStart(String sessionId) async {
+    final db = await database;
+    if (!await _hasTable(db, 'quiz_sessions')) {
+      return;
+    }
+    await db.execute(
+      '''
+        INSERT OR IGNORE INTO quiz_sessions (session_id, started_at)
+        VALUES (?, ?)
+      ''',
+      [sessionId, DateTime.now().toIso8601String()],
+    );
+  }
+
+  Future<void> recordQuizSessionComplete(String sessionId) async {
+    final db = await database;
+    if (!await _hasTable(db, 'quiz_sessions')) {
+      return;
+    }
+    final now = DateTime.now().toIso8601String();
+    final updated = await db.update(
+      'quiz_sessions',
+      {'completed_at': now},
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+    );
+    if (updated == 0) {
+      await db.insert(
+        'quiz_sessions',
+        {
+          'session_id': sessionId,
+          'started_at': now,
+          'completed_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+  }
+
   Future<void> updateWordStatus(int id, String newStatus) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -1350,27 +1401,57 @@ class DatabaseHelper {
     final startStr = weekStart.toIso8601String().split('T')[0];
     final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
 
-    final activity = await db.rawQuery('''
-      SELECT DATE(timestamp) as day, COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-      FROM study_log
-      WHERE DATE(timestamp) BETWEEN ? AND ?
-      GROUP BY day
-      ORDER BY day ASC
-    ''', [startStr, endStr]);
+    List<Map<String, dynamic>> activity = [];
+    int totalQuizzes = 0;
+    int totalDays = 0;
 
-    final totalQuizRows = await db.rawQuery('''
-      SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-      FROM study_log
-      WHERE DATE(timestamp) BETWEEN ? AND ?
-    ''', [startStr, endStr]);
-    final totalQuizzes = totalQuizRows.isNotEmpty ? (totalQuizRows.first['count'] as int? ?? 0) : 0;
+    final hasQuizSessions = await _hasTable(db, 'quiz_sessions');
 
-    final totalDaysRows = await db.rawQuery('''
-      SELECT COUNT(DISTINCT DATE(timestamp)) as count
-      FROM study_log
-      WHERE DATE(timestamp) BETWEEN ? AND ?
-    ''', [startStr, endStr]);
-    final totalDays = totalDaysRows.isNotEmpty ? (totalDaysRows.first['count'] as int? ?? 0) : 0;
+    if (hasQuizSessions) {
+      activity = await db.rawQuery('''
+        SELECT DATE(completed_at) as day, COUNT(*) as count
+        FROM quiz_sessions
+        WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
+        GROUP BY day
+        ORDER BY day ASC
+      ''', [startStr, endStr]);
+
+      final totalQuizRows = await db.rawQuery('''
+        SELECT COUNT(*) as count
+        FROM quiz_sessions
+        WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
+      ''', [startStr, endStr]);
+      totalQuizzes = totalQuizRows.isNotEmpty ? (totalQuizRows.first['count'] as int? ?? 0) : 0;
+
+      final totalDaysRows = await db.rawQuery('''
+        SELECT COUNT(DISTINCT DATE(completed_at)) as count
+        FROM quiz_sessions
+        WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
+      ''', [startStr, endStr]);
+      totalDays = totalDaysRows.isNotEmpty ? (totalDaysRows.first['count'] as int? ?? 0) : 0;
+    } else {
+      activity = await db.rawQuery('''
+        SELECT DATE(timestamp) as day, COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
+        FROM study_log
+        WHERE DATE(timestamp) BETWEEN ? AND ?
+        GROUP BY day
+        ORDER BY day ASC
+      ''', [startStr, endStr]);
+
+      final totalQuizRows = await db.rawQuery('''
+        SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
+        FROM study_log
+        WHERE DATE(timestamp) BETWEEN ? AND ?
+      ''', [startStr, endStr]);
+      totalQuizzes = totalQuizRows.isNotEmpty ? (totalQuizRows.first['count'] as int? ?? 0) : 0;
+
+      final totalDaysRows = await db.rawQuery('''
+        SELECT COUNT(DISTINCT DATE(timestamp)) as count
+        FROM study_log
+        WHERE DATE(timestamp) BETWEEN ? AND ?
+      ''', [startStr, endStr]);
+      totalDays = totalDaysRows.isNotEmpty ? (totalDaysRows.first['count'] as int? ?? 0) : 0;
+    }
 
     final totalWordsRows = await db.rawQuery('''
       SELECT COUNT(DISTINCT word_id) as count
@@ -1554,11 +1635,23 @@ class DatabaseHelper {
 
   Future<int> getQuizCountForDate(DateTime date) async {
     final db = await database;
+    final day = date.toIso8601String().split('T')[0];
+    if (await _hasTable(db, 'quiz_sessions')) {
+      final rows = await db.rawQuery('''
+        SELECT COUNT(*) as count
+        FROM quiz_sessions
+        WHERE completed_at IS NOT NULL AND DATE(completed_at) = ?
+      ''', [day]);
+      if (rows.isEmpty) {
+        return 0;
+      }
+      return rows.first['count'] as int? ?? 0;
+    }
+
     if (!await _hasTable(db, 'study_log')) {
       return 0;
     }
 
-    final day = date.toIso8601String().split('T')[0];
     final rows = await db.rawQuery('''
       SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
       FROM study_log

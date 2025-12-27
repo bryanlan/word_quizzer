@@ -27,7 +27,10 @@ class _QuizScreenState extends State<QuizScreen> {
   String originalContextText = '';
   final Map<int, bool> sessionResults = {};
   final Map<int, bool> contextRevealUsed = {};
+  final Map<int, List<String>> optionsByWord = {};
+  final Map<int, String> selectedOptionsByWord = {};
   late final String sessionId;
+  bool sessionStarted = false;
   
   List<String> currentOptions = [];
   String? selectedOption;
@@ -76,21 +79,25 @@ class _QuizScreenState extends State<QuizScreen> {
   Future<void> _loadOptionsForCurrent() async {
     if (sessionWords.isEmpty) return;
     final currentWord = sessionWords[currentIndex];
+    final alreadyAnswered = sessionResults.containsKey(currentWord.id);
+    final cachedOptions = optionsByWord[currentWord.id];
+    final shouldRevealSelf = alreadyAnswered && _isSelfGraded(currentWord.status);
     setState(() {
       currentOptions = [];
-      hasAnswered = false;
+      hasAnswered = alreadyAnswered;
       showContext = false;
-      usedContextHint = false;
-      showSelfAnswer = false;
+      usedContextHint = contextRevealUsed[currentWord.id] ?? false;
+      showSelfAnswer = shouldRevealSelf;
       contextExamples = [];
       llmExamples = [];
       originalContextText = '';
       feedbackMessage = null;
       feedbackColor = Colors.transparent;
-      selectedOption = null;
-      contextRevealUsed[currentWord.id] = false;
+      selectedOption = selectedOptionsByWord[currentWord.id];
+      contextRevealUsed[currentWord.id] = contextRevealUsed[currentWord.id] ?? false;
     });
-    final options = await DatabaseHelper.instance.getOptionsForWord(currentWord);
+    final options = cachedOptions ?? await DatabaseHelper.instance.getOptionsForWord(currentWord);
+    optionsByWord[currentWord.id] = options;
     final examples = await DatabaseHelper.instance.getExamplesForWord(currentWord.id);
     final mergedContexts = <String>[];
     final seen = <String>{};
@@ -116,15 +123,15 @@ class _QuizScreenState extends State<QuizScreen> {
 
     setState(() {
       currentOptions = options;
-      hasAnswered = false;
+      hasAnswered = alreadyAnswered;
       showContext = false;
-      usedContextHint = false;
-      showSelfAnswer = false;
+      usedContextHint = contextRevealUsed[currentWord.id] ?? false;
+      showSelfAnswer = shouldRevealSelf;
       contextIndex = 0;
       contextExamples = mergedContexts;
       llmExamples = cleanedExamples;
       originalContextText = baseContext.isEmpty ? '' : _shortenContext(baseContext);
-      selectedOption = null;
+      selectedOption = selectedOptionsByWord[currentWord.id];
       feedbackMessage = null;
       feedbackColor = Colors.transparent;
     });
@@ -170,12 +177,21 @@ class _QuizScreenState extends State<QuizScreen> {
     if (hasAnswered) return; // Prevent double taps
 
     final currentWord = sessionWords[currentIndex];
+    if (sessionResults.containsKey(currentWord.id)) {
+      _nextWord();
+      return;
+    }
+    if (!sessionStarted) {
+      await DatabaseHelper.instance.recordQuizSessionStart(sessionId);
+      sessionStarted = true;
+    }
     final correctDefinition = currentWord.definition ?? "MISSING DEFINITION";
     final isCorrect = selectedOption == correctDefinition;
     final revealed = contextRevealUsed[currentWord.id] ?? usedContextHint;
     setState(() {
       hasAnswered = true;
       this.selectedOption = selectedOption;
+      selectedOptionsByWord[currentWord.id] = selectedOption;
       if (isCorrect) {
         feedbackMessage = "Correct!";
         feedbackColor = Colors.green.withOpacity(0.2);
@@ -191,6 +207,9 @@ class _QuizScreenState extends State<QuizScreen> {
       sessionId: sessionId,
     );
     sessionResults[currentWord.id] = isCorrect;
+    if (sessionResults.length == sessionWords.length) {
+      await DatabaseHelper.instance.recordQuizSessionComplete(sessionId);
+    }
     _maybeShowPromotion(currentWord.wordStem, statusChange);
 
     if (isCorrect) {
@@ -254,13 +273,17 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  void _nextWord() {
+  Future<void> _nextWord() async {
     if (currentIndex < sessionWords.length - 1) {
       setState(() {
         currentIndex++;
       });
       _loadOptionsForCurrent();
     } else {
+      if (sessionStarted && sessionResults.length == sessionWords.length) {
+        await DatabaseHelper.instance.recordQuizSessionComplete(sessionId);
+      }
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -286,66 +309,138 @@ class _QuizScreenState extends State<QuizScreen> {
     final currentWord = sessionWords[currentIndex];
     final isSelfGraded = _isSelfGraded(currentWord.status);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      appBar: AppBar(
-        title: Text("Word ${currentIndex + 1}/${sessionWords.length}"),
-      ),
-      body: Container(
-        color: feedbackColor, // Flash effect
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Expanded(
-              flex: 2,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+    return WillPopScope(
+      onWillPop: () async {
+        if (currentIndex > 0) {
+          setState(() {
+            currentIndex--;
+          });
+          _loadOptionsForCurrent();
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF121212),
+        appBar: AppBar(
+          title: Text("Word ${currentIndex + 1}/${sessionWords.length}"),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              if (currentIndex > 0) {
+                setState(() {
+                  currentIndex--;
+                });
+                _loadOptionsForCurrent();
+              } else {
+                Navigator.pop(context);
+              }
+            },
+          ),
+        ),
+        body: Container(
+          color: feedbackColor, // Flash effect
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Expanded(
+                flex: 2,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
+                      const SizedBox(height: 24),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final maxWidth = constraints.maxWidth.isFinite
+                              ? constraints.maxWidth
+                              : MediaQuery.of(context).size.width;
+                          final maxTextWidth = max(0.0, maxWidth - 72);
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: maxTextWidth),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    currentWord.wordStem,
+                                    style: const TextStyle(
+                                      fontSize: 48,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Material(
+                                color: Colors.tealAccent,
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: () => _speakWord(currentWord.wordStem),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(8.0),
+                                    child: Icon(
+                                      Icons.volume_up,
+                                      color: Colors.black,
+                                      size: 28,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      if (currentWord.phonetic != null)
                         Text(
-                          currentWord.wordStem,
-                          style: const TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
+                          currentWord.phonetic!,
+                          style: const TextStyle(color: Colors.tealAccent),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: isSelfGraded
+                          ? _buildSelfGradedPanel(currentWord)
+                          : _buildOptions(currentWord),
+                    ),
+                    if (sessionResults.containsKey(currentWord.id))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _nextWord,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text("Continue"),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          onTap: () => _speakWord(currentWord.wordStem),
-                          child: const Icon(Icons.volume_up, color: Colors.tealAccent),
-                        ),
-                      ],
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Proficiency Level: ${currentWord.status}",
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                    const SizedBox(height: 10),
-                    if (currentWord.phonetic != null)
-                       Text(currentWord.phonetic!, style: const TextStyle(color: Colors.tealAccent)),
                   ],
                 ),
               ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: isSelfGraded
-                        ? _buildSelfGradedPanel(currentWord)
-                        : _buildOptions(currentWord),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Proficiency Level: ${currentWord.status}",
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -540,6 +635,10 @@ class _QuizScreenState extends State<QuizScreen> {
     if (!showSelfAnswer) return;
 
     final currentWord = sessionWords[currentIndex];
+    if (!sessionStarted) {
+      await DatabaseHelper.instance.recordQuizSessionStart(sessionId);
+      sessionStarted = true;
+    }
     setState(() {
       hasAnswered = true;
     });
@@ -551,6 +650,9 @@ class _QuizScreenState extends State<QuizScreen> {
       sessionId: sessionId,
     );
     sessionResults[currentWord.id] = isCorrect;
+    if (sessionResults.length == sessionWords.length) {
+      await DatabaseHelper.instance.recordQuizSessionComplete(sessionId);
+    }
     _maybeShowPromotion(currentWord.wordStem, statusChange);
     _nextWord();
   }
