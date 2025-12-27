@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 import 'sync_service.dart';
-import 'db_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -16,8 +16,9 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool isLoading = true;
   bool isAuthenticated = false;
-  bool isSyncing = false;
-  String syncMessage = '';
+  Timer? _syncTimer;
+  bool _syncInFlight = false;
+  static const Duration _syncInterval = Duration(minutes: 10);
 
   @override
   void initState() {
@@ -32,8 +33,8 @@ class _AuthGateState extends State<AuthGate> {
     setState(() {
       isAuthenticated = valid;
     });
-    if (valid && token != null) {
-      await _maybeAutoSync(token);
+    if (valid) {
+      _startBackgroundSync();
     }
     if (!mounted) return;
     setState(() {
@@ -41,58 +42,61 @@ class _AuthGateState extends State<AuthGate> {
     });
   }
 
-  Future<void> _maybeAutoSync(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastSyncAt = prefs.getString('last_sync_at') ?? '';
-    final stats = await DatabaseHelper.instance.getStats();
-    final total = stats['total'] as int? ?? 0;
-    if (lastSyncAt.isNotEmpty && total > 0) {
+  void _startBackgroundSync() {
+    if (_syncTimer != null) {
       return;
     }
-    final url = prefs.getString('sync_server_url') ??
-        'https://word-quizzer-api.bryanlangley.org';
-    if (url.trim().isEmpty) {
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      isSyncing = true;
-      syncMessage = 'Syncing your library...';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _runBackgroundSync();
     });
+    _syncTimer = Timer.periodic(_syncInterval, (_) {
+      _runBackgroundSync();
+    });
+  }
+
+  Future<void> _runBackgroundSync() async {
+    if (_syncInFlight) {
+      return;
+    }
+    _syncInFlight = true;
     try {
+      final token = await AuthService.getToken();
+      if (token == null || token.isEmpty || AuthService.isTokenExpired(token)) {
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final url = prefs.getString('sync_server_url') ??
+          'https://word-quizzer-api.bryanlangley.org';
+      if (url.trim().isEmpty) {
+        return;
+      }
+      final lastSyncAt = prefs.getString('last_sync_at') ?? '';
+      if (lastSyncAt.isNotEmpty) {
+        final last = DateTime.tryParse(lastSyncAt);
+        if (last != null && DateTime.now().difference(last) < _syncInterval) {
+          return;
+        }
+      }
       final service = SyncService(baseUrl: url, token: token);
       await service.sync();
       await prefs.setString('last_sync_at', DateTime.now().toIso8601String());
     } catch (_) {
-      // Keep silent; user can retry in Settings.
+      // Silent background sync.
     } finally {
-      if (mounted) {
-        setState(() {
-          isSyncing = false;
-          syncMessage = '';
-        });
-      }
+      _syncInFlight = false;
     }
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (isSyncing) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(syncMessage, style: const TextStyle(color: Colors.grey)),
-            ],
-          ),
-        ),
-      );
     }
     if (!isAuthenticated) {
       return const LoginScreen();
