@@ -265,6 +265,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isSyncing = true;
     });
     try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Syncing...')),
+      );
       final service = SyncService(baseUrl: url, token: token);
       final summary = await service.sync();
       final prefs = await SharedPreferences.getInstance();

@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int quizzesToday = 0;
   int todayScore = 0;
   int highScore = 0;
+  bool isSyncing = false;
 
   @override
   void initState() {
@@ -91,32 +92,81 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _runSilentSync() async {
+  Future<bool> _runSyncWithFeedback({required bool refreshAppAfter}) async {
+    if (isSyncing) {
+      return false;
+    }
+    setState(() {
+      isSyncing = true;
+    });
     final token = await AuthService.getToken();
     if (token == null || token.isEmpty || AuthService.isTokenExpired(token)) {
-      return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign in to sync.')),
+        );
+      }
+      setState(() {
+        isSyncing = false;
+      });
+      return false;
     }
     final prefs = await SharedPreferences.getInstance();
     final url = prefs.getString('sync_server_url') ??
         'https://word-quizzer-api.bryanlangley.org';
     if (url.trim().isEmpty) {
-      return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sync server URL missing.')),
+        );
+      }
+      setState(() {
+        isSyncing = false;
+      });
+      return false;
     }
     try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Syncing...')),
+        );
+      }
       final service = SyncService(baseUrl: url, token: token);
-      await service.sync();
+      final summary = await service.sync();
       await prefs.setString('last_sync_at', DateTime.now().toIso8601String());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Sync complete. ${summary.wordsCreated} new, ${summary.wordsUpdated} updated.',
+            ),
+          ),
+        );
+      }
+      if (refreshAppAfter && kIsWeb) {
+        await Future.delayed(const Duration(milliseconds: 400));
+        await refreshApp();
+      }
+      return true;
     } catch (_) {
-      // Silent refresh.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sync failed.')),
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSyncing = false;
+        });
+      }
     }
   }
 
   Future<void> _handlePullToRefresh() async {
-    await _runSilentSync();
+    await _runSyncWithFeedback(refreshAppAfter: true);
     await _refreshStats();
-    if (kIsWeb) {
-      await refreshApp();
-    }
   }
 
   String _timeOfDayLabel() {
