@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'tts_web_stub.dart' if (dart.library.html) 'tts_web.dart' as tts_web;
 
 class TtsVoice {
   final String name;
@@ -60,6 +62,13 @@ class TtsService {
   }
 
   static Future<List<TtsVoice>> getVoices(FlutterTts tts) async {
+    if (kIsWeb) {
+      final webVoices = await tts_web.getWebVoices();
+      if (webVoices.isNotEmpty) {
+        return _dedupeAndSort(webVoices);
+      }
+    }
+
     final raw = await tts.getVoices;
     final voices = <TtsVoice>[];
     if (raw is List) {
@@ -90,6 +99,17 @@ class TtsService {
         }
       }
     }
+    if (voices.isEmpty && kIsWeb) {
+      final webVoices = await tts_web.getWebVoices();
+      if (webVoices.isNotEmpty) {
+        return _dedupeAndSort(webVoices);
+      }
+    }
+
+    return _dedupeAndSort(voices);
+  }
+
+  static List<TtsVoice> _dedupeAndSort(List<TtsVoice> voices) {
     final deduped = <String, TtsVoice>{};
     for (final voice in voices) {
       deduped[voice.key] = voice;

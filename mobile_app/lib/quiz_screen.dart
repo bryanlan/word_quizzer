@@ -226,7 +226,16 @@ class _QuizScreenState extends State<QuizScreen> {
             Text(word.definition ?? "N/A"),
             const SizedBox(height: 12),
             const Text("Word:", style: TextStyle(fontWeight: FontWeight.bold)),
-            Text(word.wordStem),
+            Row(
+              children: [
+                Expanded(child: Text(word.wordStem)),
+                IconButton(
+                  icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                  onPressed: () => _speakWord(word.wordStem),
+                  tooltip: 'Pronounce',
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
             const Text("Type the word to proceed:"),
             TextField(
@@ -295,23 +304,18 @@ class _QuizScreenState extends State<QuizScreen> {
                   children: [
                     if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
                     const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
                       children: [
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.center,
-                            child: Text(
-                              currentWord.wordStem,
-                              style: const TextStyle(
-                                fontSize: 48,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                        Text(
+                          currentWord.wordStem,
+                          style: const TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
                           onPressed: () => _speakWord(currentWord.wordStem),
