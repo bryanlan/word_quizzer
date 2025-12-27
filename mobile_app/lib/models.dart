@@ -167,3 +167,15 @@ class Example {
     );
   }
 }
+
+class StatusChange {
+  final String fromStatus;
+  final String toStatus;
+  final bool promoted;
+
+  StatusChange({
+    required this.fromStatus,
+    required this.toStatus,
+    required this.promoted,
+  });
+}

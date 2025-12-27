@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
 import 'models.dart';
 
@@ -25,6 +26,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
   late String currentStatus;
   bool isSaving = false;
+  final FlutterTts flutterTts = FlutterTts();
 
   @override
   void initState() {
@@ -32,12 +34,28 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     currentStatus = statusOptions.contains(widget.word.status)
         ? widget.word.status
         : 'New';
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.5);
+  }
+
+  void _speakWord(String word) {
+    flutterTts.speak(word);
   }
 
   String _percentCorrect() {
     if (widget.word.totalAttempts == 0) return "NA";
     final percent = (widget.word.correctAttempts / widget.word.totalAttempts) * 100;
     return "${percent.round()}%";
+  }
+
+  @override
+  void dispose() {
+    flutterTts.stop();
+    super.dispose();
   }
 
   @override
@@ -52,9 +70,20 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.word.wordStem,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.word.wordStem,
+                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                  onPressed: () => _speakWord(widget.word.wordStem),
+                  tooltip: 'Pronounce',
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Text(

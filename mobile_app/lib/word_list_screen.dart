@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
 import 'models.dart';
 import 'word_detail_screen.dart';
@@ -20,11 +21,28 @@ class WordListScreen extends StatefulWidget {
 class _WordListScreenState extends State<WordListScreen> {
   bool isLoading = true;
   List<WordStats> words = [];
+  final FlutterTts flutterTts = FlutterTts();
 
   @override
   void initState() {
     super.initState();
     _loadWords();
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.5);
+  }
+
+  void _speakWord(String word) {
+    flutterTts.speak(word);
+  }
+
+  @override
+  void dispose() {
+    flutterTts.stop();
+    super.dispose();
   }
 
   Future<void> _loadWords() async {
@@ -64,6 +82,11 @@ class _WordListScreenState extends State<WordListScreen> {
                     return ListTile(
                       title: Text(word.wordStem),
                       subtitle: Text(_statsText(word)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                        onPressed: () => _speakWord(word.wordStem),
+                        tooltip: 'Pronounce',
+                      ),
                       onTap: () async {
                         await Navigator.push(
                           context,

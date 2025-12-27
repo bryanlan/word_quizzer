@@ -48,6 +48,19 @@ class _QuizScreenState extends State<QuizScreen> {
     await flutterTts.setSpeechRate(0.5);
   }
 
+  void _speakWord(String word) {
+    flutterTts.speak(word);
+  }
+
+  void _maybeShowPromotion(String wordStem, StatusChange? change) {
+    if (change == null || !change.promoted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Promoted! $wordStem -> ${change.toStatus}.')),
+    );
+  }
+
   Future<void> _loadSession() async {
     final words = await DatabaseHelper.instance.getDailyDeck();
     setState(() {
@@ -171,16 +184,17 @@ class _QuizScreenState extends State<QuizScreen> {
       }
     });
 
-    await DatabaseHelper.instance.recordAnswer(
+    final statusChange = await DatabaseHelper.instance.recordAnswer(
       currentWord.id,
       isCorrect,
       allowStreakIncrement: !revealed,
       sessionId: sessionId,
     );
     sessionResults[currentWord.id] = isCorrect;
+    _maybeShowPromotion(currentWord.wordStem, statusChange);
 
     if (isCorrect) {
-      flutterTts.speak(currentWord.wordStem);
+      _speakWord(currentWord.wordStem);
       // Auto advance after short delay
       Future.delayed(const Duration(seconds: 1), _nextWord);
     } else {
@@ -281,9 +295,20 @@ class _QuizScreenState extends State<QuizScreen> {
                   children: [
                     if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
                     const SizedBox(height: 24),
-                    Text(
-                      currentWord.wordStem,
-                      style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          currentWord.wordStem,
+                          style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                          onPressed: () => _speakWord(currentWord.wordStem),
+                          tooltip: 'Pronounce',
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     if (currentWord.phonetic != null)
@@ -509,12 +534,13 @@ class _QuizScreenState extends State<QuizScreen> {
     });
 
     final isCorrect = grade != 'failed';
-    await DatabaseHelper.instance.recordSelfGrade(
+    final statusChange = await DatabaseHelper.instance.recordSelfGrade(
       currentWord.id,
       grade,
       sessionId: sessionId,
     );
     sessionResults[currentWord.id] = isCorrect;
+    _maybeShowPromotion(currentWord.wordStem, statusChange);
     _nextWord();
   }
 

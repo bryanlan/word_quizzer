@@ -622,6 +622,12 @@ class DatabaseHelper {
     }
   }
 
+  bool _isPromotion(String fromStatus, String toStatus) {
+    return (fromStatus == 'Learning' && toStatus == 'Proficient') ||
+        (fromStatus == 'Proficient' && toStatus == 'Adept') ||
+        (fromStatus == 'Adept' && toStatus == 'Mastered');
+  }
+
   String? _nextReviewDateForStatus(String status) {
     int daysToAdd = 0;
     if (status == 'Proficient') {
@@ -642,7 +648,7 @@ class DatabaseHelper {
         .split('T')[0];
   }
 
-  Future<void> recordAnswer(
+  Future<StatusChange?> recordAnswer(
     int wordId,
     bool isCorrect, {
     bool allowStreakIncrement = true,
@@ -650,7 +656,7 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
-      return;
+      return null;
     }
 
     final rows = await db.query(
@@ -661,7 +667,7 @@ class DatabaseHelper {
       limit: 1,
     );
     if (rows.isEmpty) {
-      return;
+      return null;
     }
 
     String status = rows.first['status']?.toString() ?? 'Learning';
@@ -722,16 +728,24 @@ class DatabaseHelper {
 
     final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
+    if (newStatus != status) {
+      return StatusChange(
+        fromStatus: status,
+        toStatus: newStatus,
+        promoted: _isPromotion(status, newStatus),
+      );
+    }
+    return null;
   }
 
-  Future<void> recordSelfGrade(
+  Future<StatusChange?> recordSelfGrade(
     int wordId,
     String grade, {
     String? sessionId,
   }) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
-      return;
+      return null;
     }
 
     final rows = await db.query(
@@ -742,7 +756,7 @@ class DatabaseHelper {
       limit: 1,
     );
     if (rows.isEmpty) {
-      return;
+      return null;
     }
 
     final status = rows.first['status']?.toString() ?? 'Learning';
@@ -801,6 +815,14 @@ class DatabaseHelper {
 
     final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
+    if (newStatus != status) {
+      return StatusChange(
+        fromStatus: status,
+        toStatus: newStatus,
+        promoted: _isPromotion(status, newStatus),
+      );
+    }
+    return null;
   }
 
   Future<void> updateWordStatus(int id, String newStatus) async {
