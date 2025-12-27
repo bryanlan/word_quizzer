@@ -296,11 +296,20 @@ class _QuizScreenState extends State<QuizScreen> {
                     if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
                     const SizedBox(height: 24),
                     Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          currentWord.wordStem,
-                          style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.center,
+                            child: Text(
+                              currentWord.wordStem,
+                              style: const TextStyle(
+                                fontSize: 48,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         IconButton(
