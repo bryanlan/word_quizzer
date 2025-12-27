@@ -22,6 +22,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int promoteLearning = 3;
   int promoteProficient = 4;
   int promoteAdept = 5;
+  int withinStageBias = 0;
   bool showApiKey = false;
   final TextEditingController apiKeyController = TextEditingController();
   final TextEditingController displayNameController = TextEditingController();
@@ -50,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       promoteLearning = prefs.getInt('promote_learning_correct') ?? 3;
       promoteProficient = prefs.getInt('promote_proficient_correct') ?? 4;
       promoteAdept = prefs.getInt('promote_adept_correct') ?? 5;
+      withinStageBias = prefs.getInt('within_stage_bias') ?? 1;
       apiKeyController.text = prefs.getString('openrouter_api_key') ?? '';
       displayNameController.text = prefs.getString('display_name') ?? '';
       syncUrlController.text =
@@ -77,6 +79,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return subject;
     }
     return '${subject.substring(0, 6)}...${subject.substring(subject.length - 4)}';
+  }
+
+  String _biasLabel(int value) {
+    switch (value) {
+      case 1:
+        return 'Moderately';
+      case 2:
+        return 'Heavily';
+      default:
+        return 'None';
+    }
   }
 
   Future<void> _saveSetting(String key, int value) async {
@@ -350,6 +363,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _saveSetting('max_adept', value);
                 setState(() => maxAdept = value);
               },
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Within-Stage Bias",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "We pick words randomly within a learning stage. "
+              "How much to bias less picked words?",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 12),
+            Slider(
+              value: withinStageBias.toDouble(),
+              min: 0,
+              max: 2,
+              divisions: 2,
+              label: _biasLabel(withinStageBias),
+              onChanged: (val) {
+                final value = val.round();
+                _saveSetting('within_stage_bias', value);
+                setState(() => withinStageBias = value);
+              },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text("None", style: TextStyle(color: Colors.grey)),
+                Text("Moderately", style: TextStyle(color: Colors.grey)),
+                Text("Heavily", style: TextStyle(color: Colors.grey)),
+              ],
             ),
             const SizedBox(height: 16),
             const Text(

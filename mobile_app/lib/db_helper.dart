@@ -342,6 +342,38 @@ class DatabaseHelper {
     required int limit,
     required bool dueOnly,
     required Set<int> excludeIds,
+    required int biasLevel,
+  }) async {
+    if (limit <= 0) {
+      return [];
+    }
+
+    if (biasLevel <= 0) {
+      return _fetchRandomWordsForStatus(
+        db,
+        status: status,
+        limit: limit,
+        dueOnly: dueOnly,
+        excludeIds: excludeIds,
+      );
+    }
+
+    return _fetchWeightedWordsForStatus(
+      db,
+      status: status,
+      limit: limit,
+      dueOnly: dueOnly,
+      excludeIds: excludeIds,
+      biasLevel: biasLevel,
+    );
+  }
+
+  Future<List<Word>> _fetchRandomWordsForStatus(
+    Database db, {
+    required String status,
+    required int limit,
+    required bool dueOnly,
+    required Set<int> excludeIds,
   }) async {
     if (limit <= 0) {
       return [];
@@ -371,6 +403,67 @@ class DatabaseHelper {
     return rows.map((json) => Word.fromMap(json)).toList();
   }
 
+  Future<List<Word>> _fetchWeightedWordsForStatus(
+    Database db, {
+    required String status,
+    required int limit,
+    required bool dueOnly,
+    required Set<int> excludeIds,
+    required int biasLevel,
+  }) async {
+    final whereParts = <String>["w.status = ?"];
+    final args = <Object>[status];
+
+    if (dueOnly) {
+      whereParts.add("(w.next_review_date IS NULL OR w.next_review_date <= DATE('now'))");
+    }
+
+    if (excludeIds.isNotEmpty) {
+      final placeholders = List.filled(excludeIds.length, '?').join(',');
+      whereParts.add("w.id NOT IN ($placeholders)");
+      args.addAll(excludeIds);
+    }
+
+    final rows = await db.rawQuery('''
+      SELECT
+        w.id,
+        w.word_stem,
+        w.original_context,
+        w.book_title,
+        w.definition,
+        w.phonetic,
+        w.status,
+        w.difficulty_score,
+        w.priority_tier,
+        w.bucket_date,
+        COUNT(l.id) as attempts
+      FROM words w
+      LEFT JOIN study_log l
+        ON l.word_id = w.id
+       AND l.timestamp >= COALESCE(w.bucket_date, '1970-01-01')
+      WHERE ${whereParts.join(' AND ')}
+      GROUP BY w.id
+    ''', args);
+
+    if (rows.isEmpty) {
+      return [];
+    }
+
+    final now = DateTime.now();
+    final candidates = rows.map((row) {
+      final bucketDate = row['bucket_date']?.toString();
+      final attempts = row['attempts'] as int? ?? 0;
+      final days = _daysInStatus(now, bucketDate);
+      final exposureRate = days == 0 ? attempts.toDouble() : attempts / days;
+      return _SelectionCandidate(
+        word: Word.fromMap(row),
+        exposureRate: exposureRate,
+      );
+    }).toList();
+
+    return _pickCandidatesByBias(candidates, limit, biasLevel);
+  }
+
   Future<List<Word>> getDailyDeck() async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -384,6 +477,7 @@ class DatabaseHelper {
     final int maxProficient = prefs.getInt('max_proficient') ?? 20;
     final int maxAdept = prefs.getInt('max_adept') ?? 30;
     final int masteredPct = prefs.getInt('pct_mastered') ?? 10;
+    final int withinStageBias = prefs.getInt('within_stage_bias') ?? 1;
 
     if (quizLength <= 0) {
       return [];
@@ -403,6 +497,7 @@ class DatabaseHelper {
         limit: masteredTarget,
         dueOnly: true,
         excludeIds: selectedIds,
+        biasLevel: withinStageBias,
       );
       for (final word in masteredWords) {
         selectedIds.add(word.id);
@@ -488,6 +583,7 @@ class DatabaseHelper {
           limit: 1,
           dueOnly: selectedStatus != 'Learning',
           excludeIds: selectedIds,
+          biasLevel: withinStageBias,
         );
         if (words.isEmpty) {
           exhausted.add(selectedStatus);
@@ -511,6 +607,7 @@ class DatabaseHelper {
             limit: remaining,
             dueOnly: status != 'Learning',
             excludeIds: selectedIds,
+            biasLevel: withinStageBias,
           );
           for (final word in words) {
             selectedIds.add(word.id);
@@ -1267,6 +1364,87 @@ class DatabaseHelper {
     return "9-10";
   }
 
+  int _daysInStatus(DateTime now, String? bucketDate) {
+    if (bucketDate == null || bucketDate.trim().isEmpty) {
+      return 1;
+    }
+    final parsed = DateTime.tryParse(bucketDate);
+    if (parsed == null) {
+      return 1;
+    }
+    final days = now.difference(parsed).inDays + 1;
+    return days <= 0 ? 1 : days;
+  }
+
+  List<Word> _pickCandidatesByBias(
+    List<_SelectionCandidate> candidates,
+    int limit,
+    int biasLevel,
+  ) {
+    if (candidates.isEmpty || limit <= 0) {
+      return [];
+    }
+    if (biasLevel <= 0) {
+      candidates.shuffle();
+      return candidates.take(limit).map((c) => c.word).toList();
+    }
+
+    final rng = Random();
+    if (biasLevel >= 2) {
+      final sorted = [...candidates]
+        ..sort((a, b) => a.exposureRate.compareTo(b.exposureRate));
+      final selected = <Word>[];
+      var i = 0;
+      const tolerance = 0.000001;
+      while (i < sorted.length && selected.length < limit) {
+        final rate = sorted[i].exposureRate;
+        final bucket = <_SelectionCandidate>[];
+        while (i < sorted.length &&
+            (sorted[i].exposureRate - rate).abs() <= tolerance) {
+          bucket.add(sorted[i]);
+          i++;
+        }
+        bucket.shuffle(rng);
+        for (final candidate in bucket) {
+          if (selected.length >= limit) {
+            break;
+          }
+          selected.add(candidate.word);
+        }
+      }
+      return selected;
+    }
+
+    const double alpha = 0.7;
+    final pool = [...candidates];
+    final selected = <Word>[];
+    while (pool.isNotEmpty && selected.length < limit) {
+      var totalWeight = 0.0;
+      final weights = <double>[];
+      for (final candidate in pool) {
+        final weight = 1 / pow(1 + candidate.exposureRate, alpha);
+        weights.add(weight);
+        totalWeight += weight;
+      }
+      if (totalWeight <= 0) {
+        break;
+      }
+      final pick = rng.nextDouble() * totalWeight;
+      var cumulative = 0.0;
+      var index = 0;
+      for (var i = 0; i < pool.length; i++) {
+        cumulative += weights[i];
+        if (pick <= cumulative) {
+          index = i;
+          break;
+        }
+      }
+      selected.add(pool[index].word);
+      pool.removeAt(index);
+    }
+    return selected;
+  }
+
   Future<int> getQuizCountForDate(DateTime date) async {
     final db = await database;
     if (!await _hasTable(db, 'study_log')) {
@@ -1480,4 +1658,14 @@ class DatabaseHelper {
       correctAttempts: correctAttempts,
     );
   }
+}
+
+class _SelectionCandidate {
+  final Word word;
+  final double exposureRate;
+
+  _SelectionCandidate({
+    required this.word,
+    required this.exposureRate,
+  });
 }
