@@ -415,17 +415,26 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white10,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              "Today's score: $todayScore • High score: $highScore",
-                              style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
-                            ),
-                          ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          "Today's score: $todayScore",
+                          style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
+                        ),
+                        const Spacer(),
+                        Text(
+                          "High score: $highScore",
+                          style: const TextStyle(fontSize: 16, color: Colors.tealAccent),
+                        ),
+                      ],
+                    ),
+                  ),
                           const Spacer(),
                           ElevatedButton(
                             onPressed: () {
