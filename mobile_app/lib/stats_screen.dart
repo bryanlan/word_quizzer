@@ -4,6 +4,7 @@ import 'db_helper.dart';
 import 'package:intl/intl.dart';
 import 'daily_report_screen.dart';
 import 'models.dart';
+import 'transition_words_screen.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -27,6 +28,7 @@ class _StatsScreenState extends State<StatsScreen> {
     totalAttempts: 0,
     correctAttempts: 0,
     promotions: const {},
+    demotions: const {},
     difficultyCounts: const {},
   );
 
@@ -91,6 +93,7 @@ class _StatsScreenState extends State<StatsScreen> {
       totalAttempts: 0,
       correctAttempts: 0,
       promotions: const {},
+      demotions: const {},
       difficultyCounts: const {},
     );
     if (hasStudyLog && selectedWeek != null) {
@@ -158,6 +161,56 @@ class _StatsScreenState extends State<StatsScreen> {
           Text(label, style: const TextStyle(color: Colors.grey)),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTransitionRow({
+    required String label,
+    required int count,
+    required String fromStatus,
+    required String toStatus,
+  }) {
+    final canTap = count > 0 && selectedWeek != null;
+    return InkWell(
+      onTap: canTap
+          ? () {
+              final weekStart = selectedWeek!.start;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TransitionWordsScreen(
+                    title: label,
+                    fromStatus: fromStatus,
+                    toStatus: toStatus,
+                    weekStart: weekStart,
+                  ),
+                ),
+              );
+            }
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(color: Colors.grey)),
+            Row(
+              children: [
+                Text(
+                  count.toString(),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: canTap ? Colors.grey : Colors.transparent,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -302,18 +355,47 @@ class _StatsScreenState extends State<StatsScreen> {
                   _buildSummaryRow("Accuracy", "$accuracy%"),
                   const SizedBox(height: 16),
                   _buildSectionTitle("Promotions"),
-                  _buildSummaryRow(
-                    "Learning → Proficient",
-                    (weeklyAnalytics.promotions['Learning→Proficient'] ?? 0).toString(),
+                  _buildTransitionRow(
+                    label: "Learning → Proficient",
+                    count: weeklyAnalytics.promotions['Learning→Proficient'] ?? 0,
+                    fromStatus: 'Learning',
+                    toStatus: 'Proficient',
                   ),
-                  _buildSummaryRow(
-                    "Proficient → Adept",
-                    (weeklyAnalytics.promotions['Proficient→Adept'] ?? 0).toString(),
+                  _buildTransitionRow(
+                    label: "Proficient → Adept",
+                    count: weeklyAnalytics.promotions['Proficient→Adept'] ?? 0,
+                    fromStatus: 'Proficient',
+                    toStatus: 'Adept',
                   ),
-                  _buildSummaryRow(
-                    "Adept → Mastered",
-                    (weeklyAnalytics.promotions['Adept→Mastered'] ?? 0).toString(),
+                  _buildTransitionRow(
+                    label: "Adept → Mastered",
+                    count: weeklyAnalytics.promotions['Adept→Mastered'] ?? 0,
+                    fromStatus: 'Adept',
+                    toStatus: 'Mastered',
                   ),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle("Demotions"),
+                  if (weeklyAnalytics.demotions.isEmpty)
+                    const Text("No demotions yet.", style: TextStyle(color: Colors.grey))
+                  else
+                    ...(() {
+                      final entries = weeklyAnalytics.demotions.entries.toList()
+                        ..sort((a, b) => a.key.compareTo(b.key));
+                      return entries.map((entry) {
+                        final parts = entry.key.split('→');
+                        final from = parts.isNotEmpty ? parts.first : '';
+                        final to = parts.length > 1 ? parts.last : '';
+                        final label = parts.length > 1
+                            ? '${parts.first} → ${parts.last}'
+                            : entry.key;
+                        return _buildTransitionRow(
+                          label: label,
+                          count: entry.value,
+                          fromStatus: from,
+                          toStatus: to,
+                        );
+                      }).toList();
+                    })(),
                   const SizedBox(height: 16),
                   _buildSectionTitle("Difficulty Histogram (Score 1-10)"),
                   _buildDistributionChips(weeklyAnalytics.difficultyCounts),

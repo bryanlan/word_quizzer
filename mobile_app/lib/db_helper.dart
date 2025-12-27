@@ -628,6 +628,27 @@ class DatabaseHelper {
         (fromStatus == 'Adept' && toStatus == 'Mastered');
   }
 
+  bool _isDemotion(String fromStatus, String toStatus) {
+    final fromRank = _statusRank(fromStatus);
+    final toRank = _statusRank(toStatus);
+    return fromRank > 0 && toRank > 0 && fromRank > toRank;
+  }
+
+  int _statusRank(String status) {
+    switch (status) {
+      case 'Learning':
+        return 1;
+      case 'Proficient':
+        return 2;
+      case 'Adept':
+        return 3;
+      case 'Mastered':
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
   String? _nextReviewDateForStatus(String status) {
     int daysToAdd = 0;
     if (status == 'Proficient') {
@@ -991,6 +1012,67 @@ class DatabaseHelper {
     }).toList();
   }
 
+  Future<List<WordStats>> getWordsForStatusTransition({
+    required DateTime weekStart,
+    required String fromStatus,
+    required String toStatus,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words') || !await _hasTable(db, 'status_log')) {
+      return [];
+    }
+
+    final startStr = weekStart.toIso8601String().split('T')[0];
+    final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
+    final hasStudyLog = await _hasTable(db, 'study_log');
+
+    if (!hasStudyLog) {
+      final rows = await db.rawQuery('''
+        SELECT DISTINCT w.id, w.word_stem, w.definition, w.original_context, w.status
+        FROM status_log s
+        JOIN words w ON s.word_id = w.id
+        WHERE s.from_status = ? AND s.to_status = ?
+          AND DATE(s.timestamp) BETWEEN ? AND ?
+        ORDER BY w.word_stem COLLATE NOCASE
+      ''', [fromStatus, toStatus, startStr, endStr]);
+      return rows
+          .map((row) => WordStats.fromMap({
+                ...row,
+                'total_attempts': 0,
+                'correct_attempts': 0,
+              }))
+          .toList();
+    }
+
+    final rows = await db.rawQuery('''
+      SELECT 
+        w.id,
+        w.word_stem,
+        w.definition,
+        w.original_context,
+        w.status,
+        COUNT(l.id) as total_attempts,
+        SUM(CASE WHEN l.result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+      FROM (
+        SELECT DISTINCT word_id
+        FROM status_log
+        WHERE from_status = ? AND to_status = ?
+          AND DATE(timestamp) BETWEEN ? AND ?
+      ) s
+      JOIN words w ON s.word_id = w.id
+      LEFT JOIN study_log l ON l.word_id = w.id
+      GROUP BY w.id
+      ORDER BY w.word_stem COLLATE NOCASE
+    ''', [fromStatus, toStatus, startStr, endStr]);
+
+    return rows.map((row) {
+      final normalized = Map<String, dynamic>.from(row);
+      normalized['total_attempts'] = normalized['total_attempts'] ?? 0;
+      normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
+      return WordStats.fromMap(normalized);
+    }).toList();
+  }
+
   Future<List<QuizWordReport>> getQuizReportData(List<int> wordIds) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -1056,6 +1138,7 @@ class DatabaseHelper {
         totalAttempts: 0,
         correctAttempts: 0,
         promotions: {},
+        demotions: {},
         difficultyCounts: {},
       );
     }
@@ -1106,6 +1189,11 @@ class DatabaseHelper {
       'Proficient→Adept': 0,
       'Adept→Mastered': 0,
     };
+    final demotions = <String, int>{
+      'Mastered→Adept': 0,
+      'Adept→Proficient': 0,
+      'Proficient→Learning': 0,
+    };
     if (await _hasTable(db, 'status_log')) {
       final rows = await db.rawQuery('''
         SELECT from_status, to_status, COUNT(*) as count
@@ -1123,6 +1211,10 @@ class DatabaseHelper {
           promotions['Proficient→Adept'] = count;
         } else if (from == 'Adept' && to == 'Mastered') {
           promotions['Adept→Mastered'] = count;
+        }
+        if (_isDemotion(from, to)) {
+          final key = '$from→$to';
+          demotions[key] = (demotions[key] ?? 0) + count;
         }
       }
     }
@@ -1151,6 +1243,7 @@ class DatabaseHelper {
       totalAttempts: totalAttempts,
       correctAttempts: correctAttempts,
       promotions: promotions,
+      demotions: demotions,
       difficultyCounts: difficultyCounts,
     );
   }

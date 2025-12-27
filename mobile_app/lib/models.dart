@@ -122,6 +122,7 @@ class WeeklyAnalytics {
   final int totalAttempts;
   final int correctAttempts;
   final Map<String, int> promotions;
+  final Map<String, int> demotions;
   final Map<String, int> difficultyCounts;
 
   WeeklyAnalytics({
@@ -132,6 +133,7 @@ class WeeklyAnalytics {
     required this.totalAttempts,
     required this.correctAttempts,
     required this.promotions,
+    required this.demotions,
     required this.difficultyCounts,
   });
 }
