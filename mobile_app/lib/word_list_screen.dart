@@ -3,6 +3,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
 import 'models.dart';
 import 'word_detail_screen.dart';
+import 'tts_service.dart';
 
 class WordListScreen extends StatefulWidget {
   final String status;
@@ -31,8 +32,7 @@ class _WordListScreenState extends State<WordListScreen> {
   }
 
   Future<void> _initTts() async {
-    await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.5);
+    await TtsService.configure(flutterTts);
   }
 
   void _speakWord(String word) {

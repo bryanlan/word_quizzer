@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
 import 'models.dart';
 import 'quiz_report_screen.dart';
+import 'tts_service.dart';
 
 class QuizScreen extends StatefulWidget {
   const QuizScreen({super.key});
@@ -44,8 +45,7 @@ class _QuizScreenState extends State<QuizScreen> {
   }
   
   Future<void> _initTts() async {
-    await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.5);
+    await TtsService.configure(flutterTts);
   }
 
   void _speakWord(String word) {

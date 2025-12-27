@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'openrouter_service.dart';
 import 'db_helper.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'tts_service.dart';
 import 'sync_service.dart';
 import 'auth_service.dart';
 import 'login_screen.dart';
@@ -29,6 +31,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController apiKeyController = TextEditingController();
   final TextEditingController displayNameController = TextEditingController();
   final TextEditingController syncUrlController = TextEditingController();
+  final FlutterTts flutterTts = FlutterTts();
+  List<TtsVoice> ttsVoices = [];
+  String ttsSelection = 'auto';
+  bool isLoadingVoices = false;
   bool isTestingKey = false;
   bool isTestingSync = false;
   bool isSyncing = false;
@@ -40,6 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    _loadVoices();
   }
 
   Future<void> _loadSettings() async {
@@ -47,6 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final resetAtStr = prefs.getString('score_reset_at');
     final resetAt = resetAtStr == null ? null : DateTime.tryParse(resetAtStr);
     final scoreValue = await DatabaseHelper.instance.getHighScore(since: resetAt);
+    final savedVoice = prefs.getString(TtsService.voiceKey);
     setState(() {
       quizLength = prefs.getInt('quiz_length') ?? 20;
       maxLearning = prefs.getInt('max_learning') ?? 20;
@@ -58,6 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       promoteAdept = prefs.getInt('promote_adept_correct') ?? 5;
       withinStageBias = prefs.getInt('within_stage_bias') ?? 1;
       highScore = scoreValue;
+      ttsSelection = savedVoice?.isNotEmpty == true ? savedVoice! : 'auto';
       apiKeyController.text = prefs.getString('openrouter_api_key') ?? '';
       displayNameController.text = prefs.getString('display_name') ?? '';
       syncUrlController.text =
@@ -74,6 +83,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         authStatusLabel = 'Signed in';
         authSubject = _shortenSubject(AuthService.tokenSubject(token));
       }
+    });
+  }
+
+  Future<void> _loadVoices() async {
+    setState(() {
+      isLoadingVoices = true;
+    });
+    final voices = await TtsService.getVoices(flutterTts);
+    if (!mounted) return;
+    setState(() {
+      ttsVoices = voices;
+      isLoadingVoices = false;
     });
   }
 
@@ -306,7 +327,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     apiKeyController.dispose();
     displayNameController.dispose();
     syncUrlController.dispose();
+    flutterTts.stop();
     super.dispose();
+  }
+
+  Future<void> _setVoiceSelection(String selection) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (selection == 'auto') {
+      await prefs.remove(TtsService.voiceKey);
+      await TtsService.configure(flutterTts);
+    } else {
+      final voice = ttsVoices.firstWhere(
+        (v) => v.key == selection,
+        orElse: () => ttsVoices.first,
+      );
+      await prefs.setString(TtsService.voiceKey, voice.key);
+      if (voice.locale.isNotEmpty) {
+        await flutterTts.setLanguage(voice.locale);
+      }
+      await flutterTts.setVoice(voice.toVoiceMap());
+    }
+    if (!mounted) return;
+    setState(() {
+      ttsSelection = selection;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Voice updated.')),
+    );
   }
 
   @override
@@ -499,6 +546,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Text("Reset High Score"),
               ),
             ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 24),
+            const Text(
+              "Pronunciation Voice",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Choose the voice used to pronounce words on this device.",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 12),
+            if (isLoadingVoices)
+              const Center(child: CircularProgressIndicator())
+            else if (ttsVoices.isEmpty)
+              const Text(
+                "No voices available on this device.",
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              DropdownButtonFormField<String>(
+                value: ttsSelection,
+                items: [
+                  const DropdownMenuItem(
+                    value: 'auto',
+                    child: Text('Automatic (Best available)'),
+                  ),
+                  ...ttsVoices.map(
+                    (voice) => DropdownMenuItem(
+                      value: voice.key,
+                      child: Text(voice.label),
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  _setVoiceSelection(value);
+                },
+                decoration: const InputDecoration(border: OutlineInputBorder()),
+              ),
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 24),
