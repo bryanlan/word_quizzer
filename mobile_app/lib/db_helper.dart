@@ -1222,6 +1222,56 @@ class DatabaseHelper {
     }).toList();
   }
 
+  Future<WordStats?> getWordStatsById(int id) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return null;
+    }
+
+    final hasStudyLog = await _hasTable(db, 'study_log');
+    if (!hasStudyLog) {
+      final rows = await db.query(
+        'words',
+        columns: ['id', 'word_stem', 'definition', 'original_context', 'status'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      return WordStats.fromMap({
+        ...rows.first,
+        'total_attempts': 0,
+        'correct_attempts': 0,
+      });
+    }
+
+    final rows = await db.rawQuery('''
+      SELECT 
+        w.id,
+        w.word_stem,
+        w.definition,
+        w.original_context,
+        w.status,
+        COUNT(l.id) as total_attempts,
+        SUM(CASE WHEN l.result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+      FROM words w
+      LEFT JOIN study_log l ON l.word_id = w.id
+      WHERE w.id = ?
+      GROUP BY w.id
+      LIMIT 1
+    ''', [id]);
+
+    if (rows.isEmpty) {
+      return null;
+    }
+    final normalized = Map<String, dynamic>.from(rows.first);
+    normalized['total_attempts'] = normalized['total_attempts'] ?? 0;
+    normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
+    return WordStats.fromMap(normalized);
+  }
+
   Future<List<WordStats>> getAllWordsWithStats() async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -1384,7 +1434,7 @@ class DatabaseHelper {
 
   Future<WeeklyAnalytics> getWeeklyAnalytics(DateTime weekStart) async {
     final db = await database;
-    if (!await _hasTable(db, 'study_log')) {
+    if (!await _hasTable(db, 'quiz_sessions')) {
       return WeeklyAnalytics(
         activity: [],
         totalQuizzes: 0,
@@ -1401,58 +1451,20 @@ class DatabaseHelper {
     final startStr = weekStart.toIso8601String().split('T')[0];
     final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
 
-    // Legacy quiz counting from study_log (used for older history, before quiz_sessions existed).
-    final legacyActivity = await db.rawQuery('''
-      SELECT DATE(timestamp) as day, COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-      FROM study_log
-      WHERE DATE(timestamp) BETWEEN ? AND ?
+    final completedByDay = <String, int>{};
+    final completedDays = await db.rawQuery('''
+      SELECT DATE(completed_at) as day, COUNT(*) as count
+      FROM quiz_sessions
+      WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
       GROUP BY day
+      ORDER BY day
     ''', [startStr, endStr]);
-
-    final legacyByDay = <String, int>{};
-    for (final row in legacyActivity) {
+    for (final row in completedDays) {
       final day = row['day']?.toString();
       if (day == null || day.isEmpty) {
         continue;
       }
-      legacyByDay[day] = row['count'] as int? ?? 0;
-    }
-
-    // New quiz counting from quiz_sessions: only completed sessions count as a quiz.
-    // If a day has any quiz_sessions rows (started or completed), we use quiz_sessions
-    // for that day to avoid counting incomplete quizzes.
-    final hasQuizSessions = await _hasTable(db, 'quiz_sessions');
-    final sessionDays = <String>{};
-    final completedByDay = <String, int>{};
-    if (hasQuizSessions) {
-      final startedDays = await db.rawQuery('''
-        SELECT DATE(started_at) as day, COUNT(*) as count
-        FROM quiz_sessions
-        WHERE DATE(started_at) BETWEEN ? AND ?
-        GROUP BY day
-      ''', [startStr, endStr]);
-      for (final row in startedDays) {
-        final day = row['day']?.toString();
-        if (day == null || day.isEmpty) {
-          continue;
-        }
-        sessionDays.add(day);
-      }
-
-      final completedDays = await db.rawQuery('''
-        SELECT DATE(completed_at) as day, COUNT(*) as count
-        FROM quiz_sessions
-        WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
-        GROUP BY day
-      ''', [startStr, endStr]);
-      for (final row in completedDays) {
-        final day = row['day']?.toString();
-        if (day == null || day.isEmpty) {
-          continue;
-        }
-        sessionDays.add(day);
-        completedByDay[day] = row['count'] as int? ?? 0;
-      }
+      completedByDay[day] = row['count'] as int? ?? 0;
     }
 
     final activity = <Map<String, dynamic>>[];
@@ -1461,9 +1473,7 @@ class DatabaseHelper {
     for (var i = 0; i < 7; i++) {
       final date = weekStart.add(Duration(days: i));
       final dayStr = date.toIso8601String().split('T')[0];
-      final count = sessionDays.contains(dayStr)
-          ? (completedByDay[dayStr] ?? 0)
-          : (legacyByDay[dayStr] ?? 0);
+      final count = completedByDay[dayStr] ?? 0;
       if (count <= 0) {
         continue;
       }
@@ -1472,21 +1482,36 @@ class DatabaseHelper {
       totalDays += 1;
     }
 
-    final totalWordsRows = await db.rawQuery('''
-      SELECT COUNT(DISTINCT word_id) as count
-      FROM study_log
-      WHERE DATE(timestamp) BETWEEN ? AND ?
-    ''', [startStr, endStr]);
-    final totalWords = totalWordsRows.isNotEmpty ? (totalWordsRows.first['count'] as int? ?? 0) : 0;
+    int totalWords = 0;
+    int totalAttempts = 0;
+    int correctAttempts = 0;
+    if (totalQuizzes > 0 && await _hasTable(db, 'study_log')) {
+      final totalWordsRows = await db.rawQuery('''
+        WITH completed_sessions AS (
+          SELECT session_id
+          FROM quiz_sessions
+          WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
+        )
+        SELECT COUNT(DISTINCT word_id) as count
+        FROM study_log
+        WHERE session_id IN (SELECT session_id FROM completed_sessions)
+      ''', [startStr, endStr]);
+      totalWords = totalWordsRows.isNotEmpty ? (totalWordsRows.first['count'] as int? ?? 0) : 0;
 
-    final attemptsRows = await db.rawQuery('''
-      SELECT COUNT(*) as total_attempts,
-             SUM(CASE WHEN result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
-      FROM study_log
-      WHERE DATE(timestamp) BETWEEN ? AND ?
-    ''', [startStr, endStr]);
-    final totalAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['total_attempts'] as int? ?? 0) : 0;
-    final correctAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['correct_attempts'] as int? ?? 0) : 0;
+      final attemptsRows = await db.rawQuery('''
+        WITH completed_sessions AS (
+          SELECT session_id
+          FROM quiz_sessions
+          WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
+        )
+        SELECT COUNT(*) as total_attempts,
+               SUM(CASE WHEN result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
+        FROM study_log
+        WHERE session_id IN (SELECT session_id FROM completed_sessions)
+      ''', [startStr, endStr]);
+      totalAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['total_attempts'] as int? ?? 0) : 0;
+      correctAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['correct_attempts'] as int? ?? 0) : 0;
+    }
 
     final promotions = <String, int>{
       'Learning→Proficient': 0,
@@ -1524,12 +1549,21 @@ class DatabaseHelper {
     }
 
     final difficultyCounts = <String, int>{};
-    if (await _hasTable(db, 'words')) {
+    if (totalQuizzes > 0 && await _hasTable(db, 'study_log') && await _hasTable(db, 'words')) {
       final rows = await db.rawQuery('''
-        SELECT DISTINCT w.id, w.difficulty_score
-        FROM study_log l
-        JOIN words w ON l.word_id = w.id
-        WHERE DATE(l.timestamp) BETWEEN ? AND ?
+        WITH completed_sessions AS (
+          SELECT session_id
+          FROM quiz_sessions
+          WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
+        ),
+        reviewed_words AS (
+          SELECT DISTINCT word_id
+          FROM study_log
+          WHERE session_id IN (SELECT session_id FROM completed_sessions)
+        )
+        SELECT w.difficulty_score
+        FROM reviewed_words r
+        JOIN words w ON r.word_id = w.id
       ''', [startStr, endStr]);
 
       for (final row in rows) {
@@ -1550,6 +1584,40 @@ class DatabaseHelper {
       demotions: demotions,
       difficultyCounts: difficultyCounts,
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getTroublesomeWords({
+    int days = 28,
+    int limit = 5,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'quiz_sessions') ||
+        !await _hasTable(db, 'study_log') ||
+        !await _hasTable(db, 'words')) {
+      return [];
+    }
+
+    final sinceDate = DateTime.now()
+        .subtract(Duration(days: days))
+        .toIso8601String()
+        .split('T')[0];
+    final rows = await db.rawQuery('''
+      WITH recent_sessions AS (
+        SELECT session_id
+        FROM quiz_sessions
+        WHERE completed_at IS NOT NULL AND DATE(completed_at) >= ?
+      )
+      SELECT w.id, w.word_stem, COUNT(*) as fails
+      FROM study_log l
+      JOIN recent_sessions s ON l.session_id = s.session_id
+      JOIN words w ON l.word_id = w.id
+      WHERE l.result = 'Incorrect'
+      GROUP BY w.id, w.word_stem
+      ORDER BY fails DESC, w.word_stem COLLATE NOCASE
+      LIMIT ?
+    ''', [sinceDate, limit]);
+
+    return rows.map((row) => Map<String, dynamic>.from(row)).toList();
   }
 
   String _difficultyBucket(int score) {
@@ -1655,36 +1723,14 @@ class DatabaseHelper {
   Future<int> getQuizCountForDate(DateTime date) async {
     final db = await database;
     final day = date.toIso8601String().split('T')[0];
-    if (await _hasTable(db, 'quiz_sessions')) {
-      final anyRows = await db.rawQuery('''
-        SELECT COUNT(*) as count
-        FROM quiz_sessions
-        WHERE DATE(started_at) = ? OR DATE(completed_at) = ?
-      ''', [day, day]);
-      final anySessions = anyRows.isNotEmpty ? (anyRows.first['count'] as int? ?? 0) : 0;
-      if (anySessions == 0) {
-        // No session tracking data for this day; fall back to legacy study_log-based counting.
-      } else {
-      final rows = await db.rawQuery('''
-        SELECT COUNT(*) as count
-        FROM quiz_sessions
-        WHERE completed_at IS NOT NULL AND DATE(completed_at) = ?
-      ''', [day]);
-      if (rows.isEmpty) {
-        return 0;
-      }
-      return rows.first['count'] as int? ?? 0;
-      }
-    }
-
-    if (!await _hasTable(db, 'study_log')) {
+    if (!await _hasTable(db, 'quiz_sessions')) {
       return 0;
     }
 
     final rows = await db.rawQuery('''
-      SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-      FROM study_log
-      WHERE DATE(timestamp) = ?
+      SELECT COUNT(*) as count
+      FROM quiz_sessions
+      WHERE completed_at IS NOT NULL AND DATE(completed_at) = ?
     ''', [day]);
     if (rows.isEmpty) {
       return 0;
@@ -1843,7 +1889,9 @@ class DatabaseHelper {
 
   Future<DailyQuizReport> getDailyReport(String day) async {
     final db = await database;
-    if (!await _hasTable(db, 'study_log') || !await _hasTable(db, 'words')) {
+    if (!await _hasTable(db, 'quiz_sessions') ||
+        !await _hasTable(db, 'study_log') ||
+        !await _hasTable(db, 'words')) {
       return DailyQuizReport(
         reports: [],
         lastResults: {},
@@ -1852,13 +1900,37 @@ class DatabaseHelper {
       );
     }
 
+    final sessionRows = await db.rawQuery('''
+      SELECT session_id
+      FROM quiz_sessions
+      WHERE completed_at IS NOT NULL AND DATE(completed_at) = ?
+      ORDER BY completed_at
+    ''', [day]);
+    final sessionIds = <String>[];
+    for (final row in sessionRows) {
+      final id = row['session_id']?.toString();
+      if (id == null || id.isEmpty) {
+        continue;
+      }
+      sessionIds.add(id);
+    }
+    if (sessionIds.isEmpty) {
+      return DailyQuizReport(
+        reports: [],
+        lastResults: {},
+        totalAttempts: 0,
+        correctAttempts: 0,
+      );
+    }
+
+    final placeholders = List.filled(sessionIds.length, '?').join(',');
     final summaryRows = await db.rawQuery('''
       SELECT 
         COUNT(*) as total_attempts,
         SUM(CASE WHEN result = 'Correct' THEN 1 ELSE 0 END) as correct_attempts
       FROM study_log
-      WHERE DATE(timestamp) = ?
-    ''', [day]);
+      WHERE session_id IN ($placeholders)
+    ''', sessionIds);
 
     int totalAttempts = 0;
     int correctAttempts = 0;
@@ -1883,7 +1955,7 @@ class DatabaseHelper {
           word_id,
           MAX(id) as last_id
         FROM study_log
-        WHERE DATE(timestamp) = ?
+        WHERE session_id IN ($placeholders)
         GROUP BY word_id
       ),
       all_logs AS (
@@ -1915,7 +1987,7 @@ class DatabaseHelper {
       LEFT JOIN all_logs a ON a.word_id = w.id
       LEFT JOIN last_results lr ON lr.word_id = w.id
       ORDER BY w.word_stem COLLATE NOCASE
-    ''', [day]);
+    ''', sessionIds);
 
     final reports = <QuizWordReport>[];
     final lastResults = <int, bool>{};

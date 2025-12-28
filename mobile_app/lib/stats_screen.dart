@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'daily_report_screen.dart';
 import 'models.dart';
 import 'transition_words_screen.dart';
+import 'word_detail_screen.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -56,7 +57,6 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Future<void> _loadStats() async {
-    final db = await DatabaseHelper.instance.database;
     final hasWords = await DatabaseHelper.instance.hasTable('words');
     if (!hasWords) {
       setState(() {
@@ -68,22 +68,8 @@ class _StatsScreenState extends State<StatsScreen> {
       return;
     }
 
-    final hasStudyLog = await DatabaseHelper.instance.hasTable('study_log');
-
     // 1. Get Troublesome Words
-    List<Map<String, dynamic>> badWords = [];
-    if (hasStudyLog) {
-      badWords = await db.rawQuery('''
-        SELECT w.word_stem, COUNT(*) as fails
-        FROM study_log l
-        JOIN words w ON l.word_id = w.id
-        WHERE l.result = 'Incorrect'
-        GROUP BY word_id
-        HAVING fails > 1
-        ORDER BY fails DESC
-        LIMIT 5
-      ''');
-    }
+    final badWords = await DatabaseHelper.instance.getTroublesomeWords();
 
     WeeklyAnalytics analytics = WeeklyAnalytics(
       activity: [],
@@ -96,7 +82,7 @@ class _StatsScreenState extends State<StatsScreen> {
       demotions: const {},
       difficultyCounts: const {},
     );
-    if (hasStudyLog && selectedWeek != null) {
+    if (selectedWeek != null) {
       analytics = await DatabaseHelper.instance.getWeeklyAnalytics(selectedWeek!.start);
     }
 
@@ -407,6 +393,31 @@ class _StatsScreenState extends State<StatsScreen> {
                         leading: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
                         title: Text(w['word_stem']),
                         trailing: Text("${w['fails']} fails"),
+                        onTap: () async {
+                          final rawId = w['id'];
+                          final id = rawId is int
+                              ? rawId
+                              : int.tryParse(rawId?.toString() ?? '');
+                          if (id == null) {
+                            return;
+                          }
+                          final word = await DatabaseHelper.instance.getWordStatsById(id);
+                          if (!mounted) {
+                            return;
+                          }
+                          if (word == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Word not found.")),
+                            );
+                            return;
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => WordDetailScreen(word: word),
+                            ),
+                          );
+                        },
                       )),
                 ],
               ),
