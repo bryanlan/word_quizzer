@@ -31,7 +31,32 @@ class Word {
       phonetic: map['phonetic'],
       status: map['status'],
       difficultyScore: map['difficulty_score'] ?? 0,
-      priorityTier: map['priority_tier'] ?? 3,
+      priorityTier: map['priority_tier'] ?? 0,
+    );
+  }
+}
+
+class WordSummary {
+  final int id;
+  final String wordStem;
+  final String status;
+  final int? priorityTier;
+
+  WordSummary({
+    required this.id,
+    required this.wordStem,
+    required this.status,
+    required this.priorityTier,
+  });
+
+  factory WordSummary.fromMap(Map<String, dynamic> map) {
+    final tierValue = map['priority_tier'];
+    final tier = tierValue == null ? null : (tierValue as int?);
+    return WordSummary(
+      id: map['id'],
+      wordStem: map['word_stem']?.toString() ?? '',
+      status: map['status']?.toString() ?? '',
+      priorityTier: tier == null || tier == 0 ? null : tier,
     );
   }
 }

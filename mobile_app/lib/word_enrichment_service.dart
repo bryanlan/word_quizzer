@@ -116,6 +116,45 @@ class WordEnrichmentService {
     );
   }
 
+  static Future<int> requestTier(String word) async {
+    final token = await AuthService.getToken();
+    if (token == null || token.trim().isEmpty) {
+      throw NotAuthenticatedException();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl = prefs.getString('sync_server_url') ?? _defaultServerUrl;
+    final url = Uri.parse('${_normalize(baseUrl)}/llm/word-tier');
+    final response = await http.post(
+      url,
+      headers: _headers(token),
+      body: jsonEncode({'word': word}),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw NotAuthenticatedException();
+    }
+    if (response.statusCode == 412 || response.statusCode == 424) {
+      throw MissingApiKeyException('Server OpenRouter key is missing.');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = _extractErrorMessage(response.body);
+      if (_looksLikeMissingKey(message)) {
+        throw MissingApiKeyException('Server OpenRouter key is missing.');
+      }
+      final suffix = message.isEmpty ? '' : ' - $message';
+      throw Exception('Server error: ${response.statusCode}$suffix');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final tier = decoded['tier'];
+    if (tier is int) {
+      return tier;
+    }
+    final parsed = int.tryParse(tier?.toString() ?? '');
+    if (parsed == null) {
+      throw Exception('Server response missing tier.');
+    }
+    return parsed;
+  }
+
   static List<String> _normalizeList(dynamic value) {
     final list = <String>[];
     if (value is List) {

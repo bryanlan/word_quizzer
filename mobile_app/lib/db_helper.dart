@@ -311,7 +311,10 @@ class DatabaseHelper {
     final buckets = <int, List<int>>{};
     for (final row in rows) {
       final rawTier = row['priority_tier'];
-      final tier = rawTier is int ? rawTier : int.tryParse(rawTier?.toString() ?? '') ?? 3;
+      var tier = rawTier is int ? rawTier : int.tryParse(rawTier?.toString() ?? '') ?? 3;
+      if (tier <= 0) {
+        tier = 3;
+      }
       final normalizedTier = tier.clamp(1, 5);
       buckets.putIfAbsent(normalizedTier, () => []).add(row['id'] as int);
     }
@@ -1315,6 +1318,323 @@ class DatabaseHelper {
       normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
       return WordStats.fromMap(normalized);
     }).toList();
+  }
+
+  Future<List<WordSummary>> getWordSummaries({
+    String? status,
+    int? tier,
+    String? startsWith,
+    String? search,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return [];
+    }
+
+    final whereParts = <String>[];
+    final args = <Object?>[];
+
+    if (status != null && status != 'All') {
+      whereParts.add('status = ?');
+      args.add(status);
+    }
+
+    if (tier != null) {
+      if (tier <= 0) {
+        whereParts.add('(priority_tier IS NULL OR priority_tier = 0)');
+      } else {
+        whereParts.add('priority_tier = ?');
+        args.add(tier);
+      }
+    }
+
+    if (startsWith != null && startsWith.isNotEmpty && startsWith != 'All') {
+      if (startsWith == '#') {
+        whereParts.add("substr(word_stem, 1, 1) NOT GLOB '[A-Za-z]'");
+      } else {
+        whereParts.add('upper(word_stem) LIKE ?');
+        args.add('${startsWith.toUpperCase()}%');
+      }
+    }
+
+    final trimmedSearch = (search ?? '').trim().toLowerCase();
+    if (trimmedSearch.isNotEmpty) {
+      whereParts.add('lower(word_stem) LIKE ?');
+      args.add('%$trimmedSearch%');
+    }
+
+    final whereClause = whereParts.isEmpty ? null : whereParts.join(' AND ');
+
+    final rows = await db.query(
+      'words',
+      columns: ['id', 'word_stem', 'status', 'priority_tier'],
+      where: whereClause,
+      whereArgs: args,
+      orderBy: 'word_stem COLLATE NOCASE',
+      limit: limit,
+      offset: offset,
+    );
+
+    return rows.map((row) => WordSummary.fromMap(row)).toList();
+  }
+
+  Future<List<int>> getWordIdsForFilter({
+    String? status,
+    int? tier,
+    String? startsWith,
+    String? search,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return [];
+    }
+
+    final whereParts = <String>[];
+    final args = <Object?>[];
+
+    if (status != null && status != 'All') {
+      whereParts.add('status = ?');
+      args.add(status);
+    }
+
+    if (tier != null) {
+      if (tier <= 0) {
+        whereParts.add('(priority_tier IS NULL OR priority_tier = 0)');
+      } else {
+        whereParts.add('priority_tier = ?');
+        args.add(tier);
+      }
+    }
+
+    if (startsWith != null && startsWith.isNotEmpty && startsWith != 'All') {
+      if (startsWith == '#') {
+        whereParts.add("substr(word_stem, 1, 1) NOT GLOB '[A-Za-z]'");
+      } else {
+        whereParts.add('upper(word_stem) LIKE ?');
+        args.add('${startsWith.toUpperCase()}%');
+      }
+    }
+
+    final trimmedSearch = (search ?? '').trim().toLowerCase();
+    if (trimmedSearch.isNotEmpty) {
+      whereParts.add('lower(word_stem) LIKE ?');
+      args.add('%$trimmedSearch%');
+    }
+
+    final whereClause = whereParts.isEmpty ? null : whereParts.join(' AND ');
+
+    final rows = await db.query(
+      'words',
+      columns: ['id'],
+      where: whereClause,
+      whereArgs: args,
+      orderBy: 'word_stem COLLATE NOCASE',
+    );
+
+    return rows.map((row) => row['id'] as int).toList();
+  }
+
+  Future<Map<int, String>> getWordStemsByIds(List<int> ids) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words') || ids.isEmpty) {
+      return {};
+    }
+
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await db.query(
+      'words',
+      columns: ['id', 'word_stem'],
+      where: 'id IN ($placeholders)',
+      whereArgs: ids,
+    );
+
+    final result = <int, String>{};
+    for (final row in rows) {
+      final id = row['id'] as int? ?? 0;
+      if (id == 0) continue;
+      result[id] = row['word_stem']?.toString() ?? '';
+    }
+    return result;
+  }
+
+  Future<Word?> getWordById(int id) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return null;
+    }
+    final rows = await db.query(
+      'words',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return Word.fromMap(rows.first);
+  }
+
+  Future<void> updateWordTier(int id, int? tier) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return;
+    }
+    await db.update(
+      'words',
+      {
+        'priority_tier': tier ?? 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> updateWordTierBatch(List<int> ids, int? tier) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words') || ids.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      for (final id in ids) {
+        await txn.update(
+          'words',
+          {
+            'priority_tier': tier ?? 0,
+            'updated_at': now,
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
+  }
+
+  Future<void> updateWordStatusBatch(List<int> ids, String status) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words') || ids.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      for (final id in ids) {
+        await txn.update(
+          'words',
+          {
+            'status': status,
+            'bucket_date': now,
+            'next_review_date': _nextReviewDateForStatus(status),
+            'status_correct_streak': 0,
+            'updated_at': now,
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
+    await _promoteOnDeckToLearning(db, activeLearningLimit);
+  }
+
+  Future<void> updateWordDefinition(int id, String definition) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return;
+    }
+    await db.update(
+      'words',
+      {
+        'definition': definition.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<String>> getDistractorsForWord(int wordId) async {
+    final db = await database;
+    if (!await _hasTable(db, 'distractors')) {
+      return [];
+    }
+    final rows = await db.query(
+      'distractors',
+      columns: ['text'],
+      where: 'word_id = ?',
+      whereArgs: [wordId],
+      orderBy: 'id',
+    );
+    return rows
+        .map((row) => row['text']?.toString() ?? '')
+        .where((text) => text.trim().isNotEmpty)
+        .toList();
+  }
+
+  Future<void> replaceExamplesForWord(int wordId, List<String> examples) async {
+    final db = await database;
+    if (!await _hasTable(db, 'examples')) {
+      return;
+    }
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      await txn.delete(
+        'examples',
+        where: 'word_id = ?',
+        whereArgs: [wordId],
+      );
+      for (final example in examples) {
+        final trimmed = example.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+        await txn.insert('examples', {
+          'word_id': wordId,
+          'sentence': trimmed,
+        });
+      }
+      await txn.update(
+        'words',
+        {'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [wordId],
+      );
+    });
+  }
+
+  Future<void> replaceDistractorsForWord(int wordId, List<String> distractors) async {
+    final db = await database;
+    if (!await _hasTable(db, 'distractors')) {
+      return;
+    }
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      await txn.delete(
+        'distractors',
+        where: 'word_id = ?',
+        whereArgs: [wordId],
+      );
+      for (final distractor in distractors) {
+        final trimmed = distractor.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+        await txn.insert('distractors', {
+          'word_id': wordId,
+          'text': trimmed,
+        });
+      }
+      await txn.update(
+        'words',
+        {'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [wordId],
+      );
+    });
   }
 
   Future<List<WordStats>> getWordsForStatusTransition({
