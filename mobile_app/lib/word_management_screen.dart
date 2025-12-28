@@ -69,6 +69,7 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
   bool _isLoadingMore = false;
   bool _hasMore = true;
   int _offset = 0;
+  int _loadGeneration = 0;
 
   String _statusFilter = 'All';
   int? _tierFilter;
@@ -103,12 +104,14 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
   }
 
   Future<void> _loadWords({bool reset = false}) async {
-    if (_isLoadingMore || (_isLoading && !reset)) {
+    if ((_isLoadingMore && !reset) || (_isLoading && !reset)) {
       return;
     }
+    final generation = ++_loadGeneration;
     if (reset) {
       setState(() {
         _isLoading = true;
+        _isLoadingMore = false;
         _hasMore = true;
         _offset = 0;
         _words = [];
@@ -121,22 +124,34 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       });
     }
 
-    final results = await DatabaseHelper.instance.getWordSummaries(
-      status: _statusFilter,
-      tier: _tierFilter,
-      startsWith: _letterFilter,
-      search: _searchQuery,
-      limit: _pageSize,
-      offset: _offset,
-    );
-    if (!mounted) return;
-    setState(() {
-      _words.addAll(results);
-      _offset += results.length;
-      _hasMore = results.length == _pageSize;
-      _isLoading = false;
-      _isLoadingMore = false;
-    });
+    try {
+      final results = await DatabaseHelper.instance.getWordSummaries(
+        status: _statusFilter,
+        tier: _tierFilter,
+        startsWith: _letterFilter,
+        search: _searchQuery,
+        limit: _pageSize,
+        offset: _offset,
+      );
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _words.addAll(results);
+        _offset += results.length;
+        _hasMore = results.length == _pageSize;
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+        _hasMore = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load words: $e')),
+      );
+    }
   }
 
   Future<void> _applyFilters() async {
@@ -176,10 +191,10 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _selectionMode = true;
       _selectedIds
         ..clear()
         ..addAll(ids);
+      _selectionMode = _selectedIds.isNotEmpty;
     });
   }
 
@@ -200,7 +215,9 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
     await DatabaseHelper.instance.updateWordTierBatch(ids, tier);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Updated ${ids.length} words to ${tier ?? 'Auto'} tier.')),
+      SnackBar(
+          content:
+              Text('Updated ${ids.length} words to ${tier ?? 'Auto'} tier.')),
     );
     _applyFilters();
   }
@@ -219,7 +236,8 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
     int failures = 0;
     String currentWord = '';
 
-    showDialog(
+    bool didShowDialog = false;
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
@@ -227,27 +245,32 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
           if (!dialogReady.isCompleted) {
             dialogReady.complete(setState);
           }
-          return AlertDialog(
-            title: Text(mode.label),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (currentWord.isNotEmpty) Text('Now: $currentWord'),
-                const SizedBox(height: 12),
-                LinearProgressIndicator(
-                  value: entries.isEmpty ? 0 : processed / entries.length,
-                ),
-                const SizedBox(height: 8),
-                Text('$processed / ${entries.length}'),
-                if (failures > 0)
-                  Text('Failures: $failures', style: const TextStyle(color: Colors.redAccent)),
-              ],
+          return WillPopScope(
+            onWillPop: () async => false,
+            child: AlertDialog(
+              title: Text(mode.label),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (currentWord.isNotEmpty) Text('Now: $currentWord'),
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: entries.isEmpty ? 0 : processed / entries.length,
+                  ),
+                  const SizedBox(height: 8),
+                  Text('$processed / ${entries.length}'),
+                  if (failures > 0)
+                    Text('Failures: $failures',
+                        style: const TextStyle(color: Colors.redAccent)),
+                ],
+              ),
             ),
           );
         },
       ),
     );
+    didShowDialog = true;
 
     final dialogSetState = await dialogReady.future;
 
@@ -260,15 +283,8 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
           await DatabaseHelper.instance.updateWordTier(entry.key, tier);
         } else {
           final result = await WordEnrichmentService.enrichWord(entry.value);
-          if (mode == WordLlmMode.full || mode == WordLlmMode.definition) {
-            await DatabaseHelper.instance.updateWordDefinition(entry.key, result.definition);
-          }
-          if (mode == WordLlmMode.full || mode == WordLlmMode.examples) {
-            await DatabaseHelper.instance.replaceExamplesForWord(entry.key, result.examples);
-          }
-          if (mode == WordLlmMode.full || mode == WordLlmMode.distractors) {
-            await DatabaseHelper.instance.replaceDistractorsForWord(entry.key, result.distractors);
-          }
+          await DatabaseHelper.instance
+              .replaceDistractorsForWord(entry.key, result.distractors);
         }
       } catch (_) {
         failures += 1;
@@ -277,13 +293,14 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       dialogSetState(() {});
     }
 
-    if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+    if (mounted && didShowDialog) {
       Navigator.of(context, rootNavigator: true).pop();
     }
 
     if (!mounted) return;
-    final summary =
-        failures == 0 ? 'LLM complete.' : 'LLM complete with $failures failures.';
+    final summary = failures == 0
+        ? 'LLM complete.'
+        : 'LLM complete with $failures failures.';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(summary)),
     );
@@ -296,7 +313,11 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       MaterialPageRoute(
         builder: (context) => WordEditorScreen(wordId: word.id),
       ),
-    ).then((_) => _applyFilters());
+    ).then((_) {
+      if (mounted) {
+        _applyFilters();
+      }
+    });
   }
 
   void _showStatusPicker() {
@@ -476,7 +497,8 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text('$count selected', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('$count selected',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
           TextButton(
             onPressed: _selectAllFiltered,
             child: const Text('Select all filtered'),
@@ -509,7 +531,8 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
 
   Widget _buildWordRow(WordSummary word) {
     final selected = _selectedIds.contains(word.id);
-    final tierLabel = word.priorityTier == null ? 'Auto' : 'Tier ${word.priorityTier}';
+    final tierLabel =
+        word.priorityTier == null ? 'Auto' : 'Tier ${word.priorityTier}';
 
     return ListTile(
       onLongPress: () => _toggleSelection(word.id),

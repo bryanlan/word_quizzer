@@ -146,11 +146,17 @@ class WordEnrichmentService {
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final tier = decoded['tier'];
     if (tier is int) {
+      if (tier < 1 || tier > 5) {
+        throw Exception('Server returned invalid tier: $tier');
+      }
       return tier;
     }
     final parsed = int.tryParse(tier?.toString() ?? '');
     if (parsed == null) {
       throw Exception('Server response missing tier.');
+    }
+    if (parsed < 1 || parsed > 5) {
+      throw Exception('Server returned invalid tier: $parsed');
     }
     return parsed;
   }

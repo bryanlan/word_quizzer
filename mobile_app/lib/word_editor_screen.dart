@@ -60,7 +60,10 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       return;
     }
     final examples = await DatabaseHelper.instance.getExamplesForWord(word.id);
-    final distractors = await DatabaseHelper.instance.getDistractorsForWord(word.id);
+    if (!mounted) return;
+    final distractors =
+        await DatabaseHelper.instance.getDistractorsForWord(word.id);
+    if (!mounted) return;
     for (final controller in _exampleControllers) {
       controller.dispose();
     }
@@ -72,7 +75,8 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       _word = word;
       _status = word.status;
       _tier = word.priorityTier <= 0 ? null : word.priorityTier;
-      _definitionController = TextEditingController(text: word.definition ?? '');
+      _definitionController =
+          TextEditingController(text: word.definition ?? '');
       _exampleControllers = controllers;
       _distractors = distractors;
       _isLoading = false;
@@ -154,43 +158,34 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     setState(() {
       _isSaving = true;
     });
-    showDialog(
+    bool didShowDialog = false;
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Expanded(child: Text('Running LLM...')),
-          ],
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async => false,
+        child: const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('Running LLM...')),
+            ],
+          ),
         ),
       ),
     );
+    didShowDialog = true;
     try {
       if (mode == WordLlmMode.tier) {
         final tier = await WordEnrichmentService.requestTier(wordStem);
         await DatabaseHelper.instance.updateWordTier(_word!.id, tier);
       } else {
         final result = await WordEnrichmentService.enrichWord(wordStem);
-        if (mode == WordLlmMode.full || mode == WordLlmMode.definition) {
-          await DatabaseHelper.instance.updateWordDefinition(
-            _word!.id,
-            result.definition,
-          );
-        }
-        if (mode == WordLlmMode.full || mode == WordLlmMode.examples) {
-          await DatabaseHelper.instance.replaceExamplesForWord(
-            _word!.id,
-            result.examples,
-          );
-        }
-        if (mode == WordLlmMode.full || mode == WordLlmMode.distractors) {
-          await DatabaseHelper.instance.replaceDistractorsForWord(
-            _word!.id,
-            result.distractors,
-          );
-        }
+        await DatabaseHelper.instance.replaceDistractorsForWord(
+          _word!.id,
+          result.distractors,
+        );
       }
       await _loadWord();
       if (!mounted) return;
@@ -204,7 +199,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       );
     } finally {
       if (mounted) {
-        if (Navigator.of(context, rootNavigator: true).canPop()) {
+        if (didShowDialog) {
           Navigator.of(context, rootNavigator: true).pop();
         }
         setState(() {
@@ -298,6 +293,11 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                 }),
               ],
             ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _isSaving ? null : () => _runLlm(WordLlmMode.tier),
+              child: const Text('Auto Tier (LLM)'),
+            ),
             _buildSectionTitle('Definition'),
             TextField(
               controller: _definitionController,
@@ -314,7 +314,8 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
             ),
             _buildSectionTitle('Examples'),
             if (_exampleControllers.isEmpty)
-              const Text('No examples yet.', style: TextStyle(color: Colors.grey)),
+              const Text('No examples yet.',
+                  style: TextStyle(color: Colors.grey)),
             ..._exampleControllers.asMap().entries.map((entry) {
               final index = entry.key;
               final controller = entry.value;
@@ -357,7 +358,8 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
             ),
             _buildSectionTitle('Distractors'),
             if (_distractors.isEmpty)
-              const Text('No distractors yet.', style: TextStyle(color: Colors.grey))
+              const Text('No distractors yet.',
+                  style: TextStyle(color: Colors.grey))
             else
               ..._distractors.map((d) => Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -365,31 +367,9 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   )),
             const SizedBox(height: 8),
             ElevatedButton(
-              onPressed: _isSaving ? null : () => _runLlm(WordLlmMode.distractors),
+              onPressed:
+                  _isSaving ? null : () => _runLlm(WordLlmMode.distractors),
               child: const Text('Regenerate Distractors'),
-            ),
-            _buildSectionTitle('LLM Actions'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ElevatedButton(
-                  onPressed: _isSaving ? null : () => _runLlm(WordLlmMode.full),
-                  child: const Text('Full Refresh'),
-                ),
-                OutlinedButton(
-                  onPressed: _isSaving ? null : () => _runLlm(WordLlmMode.definition),
-                  child: const Text('Definition'),
-                ),
-                OutlinedButton(
-                  onPressed: _isSaving ? null : () => _runLlm(WordLlmMode.examples),
-                  child: const Text('Examples'),
-                ),
-                OutlinedButton(
-                  onPressed: _isSaving ? null : () => _runLlm(WordLlmMode.tier),
-                  child: const Text('Tier'),
-                ),
-              ],
             ),
           ],
         ),

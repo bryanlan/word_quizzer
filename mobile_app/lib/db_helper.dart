@@ -215,28 +215,34 @@ class DatabaseHelper {
     final hasUpdatedAt = columns.any((c) => c['name'] == 'updated_at');
 
     final tableSqlRows = await db.rawQuery(
-      "SELECT sql FROM sqlite_master WHERE type='table' AND name='words'"
-    );
-    final tableSql = tableSqlRows.isNotEmpty ? (tableSqlRows.first['sql']?.toString() ?? '') : '';
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='words'");
+    final tableSql = tableSqlRows.isNotEmpty
+        ? (tableSqlRows.first['sql']?.toString() ?? '')
+        : '';
     final hasOnDeck = tableSql.toLowerCase().contains('on deck');
 
     if (hasOnDeck) {
       await db.transaction((txn) async {
         if (!hasPriorityTier) {
-          await txn.execute("ALTER TABLE words ADD COLUMN priority_tier INTEGER");
+          await txn
+              .execute("ALTER TABLE words ADD COLUMN priority_tier INTEGER");
         }
         if (!hasManualFlag) {
-          await txn.execute("ALTER TABLE words ADD COLUMN manual_flag BOOLEAN DEFAULT 0");
+          await txn.execute(
+              "ALTER TABLE words ADD COLUMN manual_flag BOOLEAN DEFAULT 0");
         }
         if (!hasStreak) {
-          await txn.execute("ALTER TABLE words ADD COLUMN status_correct_streak INTEGER DEFAULT 0");
+          await txn.execute(
+              "ALTER TABLE words ADD COLUMN status_correct_streak INTEGER DEFAULT 0");
         }
         if (!hasServerWordId) {
-          await txn.execute("ALTER TABLE words ADD COLUMN server_word_id INTEGER");
+          await txn
+              .execute("ALTER TABLE words ADD COLUMN server_word_id INTEGER");
         }
         if (!hasUpdatedAt) {
           await txn.execute("ALTER TABLE words ADD COLUMN updated_at TEXT");
-          await txn.execute("UPDATE words SET updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)");
+          await txn.execute(
+              "UPDATE words SET updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)");
         }
       });
       return;
@@ -311,7 +317,9 @@ class DatabaseHelper {
     final buckets = <int, List<int>>{};
     for (final row in rows) {
       final rawTier = row['priority_tier'];
-      var tier = rawTier is int ? rawTier : int.tryParse(rawTier?.toString() ?? '') ?? 3;
+      var tier = rawTier is int
+          ? rawTier
+          : int.tryParse(rawTier?.toString() ?? '') ?? 3;
       if (tier <= 0) {
         tier = 3;
       }
@@ -340,14 +348,15 @@ class DatabaseHelper {
     return picks;
   }
 
-  Future<void> _promoteOnDeckToLearning(Database db, int activeLearningLimit) async {
+  Future<void> _promoteOnDeckToLearning(
+      Database db, int activeLearningLimit) async {
     if (!await _hasTable(db, 'words')) {
       return;
     }
 
-    final activeCount = Sqflite.firstIntValue(
-      await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Learning'")
-    ) ?? 0;
+    final activeCount = Sqflite.firstIntValue(await db.rawQuery(
+            "SELECT COUNT(*) FROM words WHERE status = 'Learning'")) ??
+        0;
     final needed = activeLearningLimit - activeCount;
     if (needed <= 0) {
       return;
@@ -428,7 +437,8 @@ class DatabaseHelper {
     final args = <Object>[status];
 
     if (dueOnly) {
-      whereParts.add("(next_review_date IS NULL OR next_review_date <= DATE('now'))");
+      whereParts
+          .add("(next_review_date IS NULL OR next_review_date <= DATE('now'))");
     }
 
     if (excludeIds.isNotEmpty) {
@@ -460,7 +470,8 @@ class DatabaseHelper {
     final args = <Object>[status];
 
     if (dueOnly) {
-      whereParts.add("(w.next_review_date IS NULL OR w.next_review_date <= DATE('now'))");
+      whereParts.add(
+          "(w.next_review_date IS NULL OR w.next_review_date <= DATE('now'))");
     }
 
     if (excludeIds.isNotEmpty) {
@@ -532,8 +543,8 @@ class DatabaseHelper {
 
     final deck = <Word>[];
     final selectedIds = <int>{};
-    final int masteredTarget = ((quizLength * masteredPct) / 100).round()
-        .clamp(0, quizLength);
+    final int masteredTarget =
+        ((quizLength * masteredPct) / 100).round().clamp(0, quizLength);
 
     if (masteredTarget > 0) {
       final masteredWords = await _fetchWordsForStatus(
@@ -592,8 +603,7 @@ class DatabaseHelper {
       while (remaining > 0) {
         final candidates = order
             .where((status) =>
-                !exhausted.contains(status) &&
-                (counts[status] ?? 0) > 0)
+                !exhausted.contains(status) && (counts[status] ?? 0) > 0)
             .toList();
         if (candidates.isEmpty) {
           break;
@@ -688,7 +698,7 @@ class DatabaseHelper {
         limit: 3,
       );
     }
-    
+
     for (var m in distMaps) {
       options.add(m['text']);
     }
@@ -696,9 +706,8 @@ class DatabaseHelper {
     // If we don't have enough specific distractors, fill with random definitions
     if (options.length < 4) {
       final List<Map<String, dynamic>> randomDefs = await db.rawQuery(
-        'SELECT definition FROM words WHERE id != ? AND definition IS NOT NULL ORDER BY RANDOM() LIMIT ?',
-        [word.id, 4 - options.length]
-      );
+          'SELECT definition FROM words WHERE id != ? AND definition IS NOT NULL ORDER BY RANDOM() LIMIT ?',
+          [word.id, 4 - options.length]);
       for (var m in randomDefs) {
         options.add(m['definition']);
       }
@@ -731,7 +740,8 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'insults')) {
       return "You are wrong. Try again.";
     }
-    final List<Map<String, dynamic>> maps = await db.query('insults', orderBy: 'RANDOM()', limit: 1);
+    final List<Map<String, dynamic>> maps =
+        await db.query('insults', orderBy: 'RANDOM()', limit: 1);
     if (maps.isNotEmpty) {
       return maps.first['text'];
     }
@@ -838,7 +848,8 @@ class DatabaseHelper {
 
     final prefs = await SharedPreferences.getInstance();
     final int learningThreshold = prefs.getInt('promote_learning_correct') ?? 3;
-    final int proficientThreshold = prefs.getInt('promote_proficient_correct') ?? 4;
+    final int proficientThreshold =
+        prefs.getInt('promote_proficient_correct') ?? 4;
     final int adeptThreshold = prefs.getInt('promote_adept_correct') ?? 5;
 
     String newStatus = status;
@@ -940,7 +951,8 @@ class DatabaseHelper {
 
     final prefs = await SharedPreferences.getInstance();
     final int learningThreshold = prefs.getInt('promote_learning_correct') ?? 3;
-    final int proficientThreshold = prefs.getInt('promote_proficient_correct') ?? 4;
+    final int proficientThreshold =
+        prefs.getInt('promote_proficient_correct') ?? 4;
     final int adeptThreshold = prefs.getInt('promote_adept_correct') ?? 5;
 
     if (grade == 'failed') {
@@ -1056,7 +1068,7 @@ class DatabaseHelper {
     await db.update(
       'words',
       {
-        'status': newStatus, 
+        'status': newStatus,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
         'status_correct_streak': 0,
@@ -1107,7 +1119,8 @@ class DatabaseHelper {
     }
   }
 
-  Future<void> logResult(int wordId, bool isCorrect, {String? sessionId}) async {
+  Future<void> logResult(int wordId, bool isCorrect,
+      {String? sessionId}) async {
     final db = await database;
     if (!await _hasTable(db, 'study_log')) {
       return;
@@ -1140,7 +1153,7 @@ class DatabaseHelper {
       'session_id': sessionId,
     });
   }
-  
+
   Future<Map<String, dynamic>> getStats() async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {
@@ -1158,14 +1171,21 @@ class DatabaseHelper {
     final prefs = await SharedPreferences.getInstance();
     final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
     await _promoteOnDeckToLearning(db, activeLearningLimit);
-    final total = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM words'));
-    final learned = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status != 'New' AND status != 'Ignored'"));
-    final mastered = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Mastered'"));
-    final learning = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Learning'"));
-    final proficient = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Proficient'"));
-    final adept = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Adept'"));
-    final onDeck = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'On Deck'"));
-    
+    final total =
+        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM words'));
+    final learned = Sqflite.firstIntValue(await db.rawQuery(
+        "SELECT COUNT(*) FROM words WHERE status != 'New' AND status != 'Ignored'"));
+    final mastered = Sqflite.firstIntValue(await db
+        .rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Mastered'"));
+    final learning = Sqflite.firstIntValue(await db
+        .rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Learning'"));
+    final proficient = Sqflite.firstIntValue(await db
+        .rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Proficient'"));
+    final adept = Sqflite.firstIntValue(
+        await db.rawQuery("SELECT COUNT(*) FROM words WHERE status = 'Adept'"));
+    final onDeck = Sqflite.firstIntValue(await db
+        .rawQuery("SELECT COUNT(*) FROM words WHERE status = 'On Deck'"));
+
     return {
       'total': total ?? 0,
       'learned': learned ?? 0,
@@ -1187,7 +1207,13 @@ class DatabaseHelper {
     if (!hasStudyLog) {
       final rows = await db.query(
         'words',
-        columns: ['id', 'word_stem', 'definition', 'original_context', 'status'],
+        columns: [
+          'id',
+          'word_stem',
+          'definition',
+          'original_context',
+          'status'
+        ],
         where: 'status = ?',
         whereArgs: [status],
         orderBy: 'word_stem COLLATE NOCASE',
@@ -1235,7 +1261,13 @@ class DatabaseHelper {
     if (!hasStudyLog) {
       final rows = await db.query(
         'words',
-        columns: ['id', 'word_stem', 'definition', 'original_context', 'status'],
+        columns: [
+          'id',
+          'word_stem',
+          'definition',
+          'original_context',
+          'status'
+        ],
         where: 'id = ?',
         whereArgs: [id],
         limit: 1,
@@ -1285,7 +1317,13 @@ class DatabaseHelper {
     if (!hasStudyLog) {
       final rows = await db.query(
         'words',
-        columns: ['id', 'word_stem', 'definition', 'original_context', 'status'],
+        columns: [
+          'id',
+          'word_stem',
+          'definition',
+          'original_context',
+          'status'
+        ],
         orderBy: 'word_stem COLLATE NOCASE',
       );
       return rows
@@ -1442,19 +1480,26 @@ class DatabaseHelper {
       return {};
     }
 
-    final placeholders = List.filled(ids.length, '?').join(',');
-    final rows = await db.query(
-      'words',
-      columns: ['id', 'word_stem'],
-      where: 'id IN ($placeholders)',
-      whereArgs: ids,
-    );
-
     final result = <int, String>{};
-    for (final row in rows) {
-      final id = row['id'] as int? ?? 0;
-      if (id == 0) continue;
-      result[id] = row['word_stem']?.toString() ?? '';
+    const int chunkSize = 900;
+    for (var start = 0; start < ids.length; start += chunkSize) {
+      final chunk = ids.sublist(
+        start,
+        start + chunkSize > ids.length ? ids.length : start + chunkSize,
+      );
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      final rows = await db.query(
+        'words',
+        columns: ['id', 'word_stem'],
+        where: 'id IN ($placeholders)',
+        whereArgs: chunk,
+      );
+
+      for (final row in rows) {
+        final id = row['id'] as int? ?? 0;
+        if (id == 0) continue;
+        result[id] = row['word_stem']?.toString() ?? '';
+      }
     }
     return result;
   }
@@ -1606,7 +1651,8 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> replaceDistractorsForWord(int wordId, List<String> distractors) async {
+  Future<void> replaceDistractorsForWord(
+      int wordId, List<String> distractors) async {
     final db = await database;
     if (!await _hasTable(db, 'distractors')) {
       return;
@@ -1648,7 +1694,8 @@ class DatabaseHelper {
     }
 
     final startStr = weekStart.toIso8601String().split('T')[0];
-    final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
+    final endStr =
+        weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
     final hasStudyLog = await _hasTable(db, 'study_log');
 
     if (!hasStudyLog) {
@@ -1713,7 +1760,13 @@ class DatabaseHelper {
     if (!hasStudyLog) {
       final rows = await db.query(
         'words',
-        columns: ['id', 'word_stem', 'status', 'status_correct_streak', 'difficulty_score'],
+        columns: [
+          'id',
+          'word_stem',
+          'status',
+          'status_correct_streak',
+          'difficulty_score'
+        ],
         where: 'id IN ($placeholders)',
         whereArgs: wordIds,
         orderBy: 'word_stem COLLATE NOCASE',
@@ -1747,7 +1800,8 @@ class DatabaseHelper {
       final normalized = Map<String, dynamic>.from(row);
       normalized['total_attempts'] = normalized['total_attempts'] ?? 0;
       normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
-      normalized['status_correct_streak'] = normalized['status_correct_streak'] ?? 0;
+      normalized['status_correct_streak'] =
+          normalized['status_correct_streak'] ?? 0;
       return QuizWordReport.fromMap(normalized);
     }).toList();
   }
@@ -1769,7 +1823,8 @@ class DatabaseHelper {
     }
 
     final startStr = weekStart.toIso8601String().split('T')[0];
-    final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
+    final endStr =
+        weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
 
     final completedByDay = <String, int>{};
     final completedDays = await db.rawQuery('''
@@ -1816,7 +1871,9 @@ class DatabaseHelper {
         FROM study_log
         WHERE session_id IN (SELECT session_id FROM completed_sessions)
       ''', [startStr, endStr]);
-      totalWords = totalWordsRows.isNotEmpty ? (totalWordsRows.first['count'] as int? ?? 0) : 0;
+      totalWords = totalWordsRows.isNotEmpty
+          ? (totalWordsRows.first['count'] as int? ?? 0)
+          : 0;
 
       final attemptsRows = await db.rawQuery('''
         WITH completed_sessions AS (
@@ -1829,8 +1886,12 @@ class DatabaseHelper {
         FROM study_log
         WHERE session_id IN (SELECT session_id FROM completed_sessions)
       ''', [startStr, endStr]);
-      totalAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['total_attempts'] as int? ?? 0) : 0;
-      correctAttempts = attemptsRows.isNotEmpty ? (attemptsRows.first['correct_attempts'] as int? ?? 0) : 0;
+      totalAttempts = attemptsRows.isNotEmpty
+          ? (attemptsRows.first['total_attempts'] as int? ?? 0)
+          : 0;
+      correctAttempts = attemptsRows.isNotEmpty
+          ? (attemptsRows.first['correct_attempts'] as int? ?? 0)
+          : 0;
     }
 
     final promotions = <String, int>{
@@ -1869,7 +1930,9 @@ class DatabaseHelper {
     }
 
     final difficultyCounts = <String, int>{};
-    if (totalQuizzes > 0 && await _hasTable(db, 'study_log') && await _hasTable(db, 'words')) {
+    if (totalQuizzes > 0 &&
+        await _hasTable(db, 'study_log') &&
+        await _hasTable(db, 'words')) {
       final rows = await db.rawQuery('''
         WITH completed_sessions AS (
           SELECT session_id
@@ -2096,7 +2159,8 @@ class DatabaseHelper {
       args.add(since.toIso8601String());
     }
 
-    final whereSql = whereParts.isEmpty ? '' : 'WHERE ${whereParts.join(' AND ')}';
+    final whereSql =
+        whereParts.isEmpty ? '' : 'WHERE ${whereParts.join(' AND ')}';
     final rows = await db.rawQuery('''
       SELECT DATE(timestamp) as day, SUM(points) as total
       FROM score_log
@@ -2313,7 +2377,8 @@ class DatabaseHelper {
     final lastResults = <int, bool>{};
     for (final row in rows) {
       final normalized = Map<String, dynamic>.from(row);
-      normalized['status_correct_streak'] = normalized['status_correct_streak'] ?? 0;
+      normalized['status_correct_streak'] =
+          normalized['status_correct_streak'] ?? 0;
       normalized['total_attempts'] = normalized['total_attempts'] ?? 0;
       normalized['correct_attempts'] = normalized['correct_attempts'] ?? 0;
       final report = QuizWordReport.fromMap(normalized);
