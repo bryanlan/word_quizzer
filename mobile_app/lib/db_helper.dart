@@ -1401,56 +1401,75 @@ class DatabaseHelper {
     final startStr = weekStart.toIso8601String().split('T')[0];
     final endStr = weekStart.add(const Duration(days: 6)).toIso8601String().split('T')[0];
 
-    List<Map<String, dynamic>> activity = [];
-    int totalQuizzes = 0;
-    int totalDays = 0;
+    // Legacy quiz counting from study_log (used for older history, before quiz_sessions existed).
+    final legacyActivity = await db.rawQuery('''
+      SELECT DATE(timestamp) as day, COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
+      FROM study_log
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+      GROUP BY day
+    ''', [startStr, endStr]);
 
+    final legacyByDay = <String, int>{};
+    for (final row in legacyActivity) {
+      final day = row['day']?.toString();
+      if (day == null || day.isEmpty) {
+        continue;
+      }
+      legacyByDay[day] = row['count'] as int? ?? 0;
+    }
+
+    // New quiz counting from quiz_sessions: only completed sessions count as a quiz.
+    // If a day has any quiz_sessions rows (started or completed), we use quiz_sessions
+    // for that day to avoid counting incomplete quizzes.
     final hasQuizSessions = await _hasTable(db, 'quiz_sessions');
-
+    final sessionDays = <String>{};
+    final completedByDay = <String, int>{};
     if (hasQuizSessions) {
-      activity = await db.rawQuery('''
+      final startedDays = await db.rawQuery('''
+        SELECT DATE(started_at) as day, COUNT(*) as count
+        FROM quiz_sessions
+        WHERE DATE(started_at) BETWEEN ? AND ?
+        GROUP BY day
+      ''', [startStr, endStr]);
+      for (final row in startedDays) {
+        final day = row['day']?.toString();
+        if (day == null || day.isEmpty) {
+          continue;
+        }
+        sessionDays.add(day);
+      }
+
+      final completedDays = await db.rawQuery('''
         SELECT DATE(completed_at) as day, COUNT(*) as count
         FROM quiz_sessions
         WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
         GROUP BY day
-        ORDER BY day ASC
       ''', [startStr, endStr]);
+      for (final row in completedDays) {
+        final day = row['day']?.toString();
+        if (day == null || day.isEmpty) {
+          continue;
+        }
+        sessionDays.add(day);
+        completedByDay[day] = row['count'] as int? ?? 0;
+      }
+    }
 
-      final totalQuizRows = await db.rawQuery('''
-        SELECT COUNT(*) as count
-        FROM quiz_sessions
-        WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
-      ''', [startStr, endStr]);
-      totalQuizzes = totalQuizRows.isNotEmpty ? (totalQuizRows.first['count'] as int? ?? 0) : 0;
-
-      final totalDaysRows = await db.rawQuery('''
-        SELECT COUNT(DISTINCT DATE(completed_at)) as count
-        FROM quiz_sessions
-        WHERE completed_at IS NOT NULL AND DATE(completed_at) BETWEEN ? AND ?
-      ''', [startStr, endStr]);
-      totalDays = totalDaysRows.isNotEmpty ? (totalDaysRows.first['count'] as int? ?? 0) : 0;
-    } else {
-      activity = await db.rawQuery('''
-        SELECT DATE(timestamp) as day, COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-        FROM study_log
-        WHERE DATE(timestamp) BETWEEN ? AND ?
-        GROUP BY day
-        ORDER BY day ASC
-      ''', [startStr, endStr]);
-
-      final totalQuizRows = await db.rawQuery('''
-        SELECT COUNT(DISTINCT COALESCE(session_id, DATE(timestamp))) as count
-        FROM study_log
-        WHERE DATE(timestamp) BETWEEN ? AND ?
-      ''', [startStr, endStr]);
-      totalQuizzes = totalQuizRows.isNotEmpty ? (totalQuizRows.first['count'] as int? ?? 0) : 0;
-
-      final totalDaysRows = await db.rawQuery('''
-        SELECT COUNT(DISTINCT DATE(timestamp)) as count
-        FROM study_log
-        WHERE DATE(timestamp) BETWEEN ? AND ?
-      ''', [startStr, endStr]);
-      totalDays = totalDaysRows.isNotEmpty ? (totalDaysRows.first['count'] as int? ?? 0) : 0;
+    final activity = <Map<String, dynamic>>[];
+    var totalQuizzes = 0;
+    var totalDays = 0;
+    for (var i = 0; i < 7; i++) {
+      final date = weekStart.add(Duration(days: i));
+      final dayStr = date.toIso8601String().split('T')[0];
+      final count = sessionDays.contains(dayStr)
+          ? (completedByDay[dayStr] ?? 0)
+          : (legacyByDay[dayStr] ?? 0);
+      if (count <= 0) {
+        continue;
+      }
+      activity.add({'day': dayStr, 'count': count});
+      totalQuizzes += count;
+      totalDays += 1;
     }
 
     final totalWordsRows = await db.rawQuery('''
@@ -1637,6 +1656,15 @@ class DatabaseHelper {
     final db = await database;
     final day = date.toIso8601String().split('T')[0];
     if (await _hasTable(db, 'quiz_sessions')) {
+      final anyRows = await db.rawQuery('''
+        SELECT COUNT(*) as count
+        FROM quiz_sessions
+        WHERE DATE(started_at) = ? OR DATE(completed_at) = ?
+      ''', [day, day]);
+      final anySessions = anyRows.isNotEmpty ? (anyRows.first['count'] as int? ?? 0) : 0;
+      if (anySessions == 0) {
+        // No session tracking data for this day; fall back to legacy study_log-based counting.
+      } else {
       final rows = await db.rawQuery('''
         SELECT COUNT(*) as count
         FROM quiz_sessions
@@ -1646,6 +1674,7 @@ class DatabaseHelper {
         return 0;
       }
       return rows.first['count'] as int? ?? 0;
+      }
     }
 
     if (!await _hasTable(db, 'study_log')) {

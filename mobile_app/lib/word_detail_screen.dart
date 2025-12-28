@@ -3,6 +3,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
 import 'models.dart';
 import 'tts_service.dart';
+import 'widgets/speaker_button.dart';
 
 class WordDetailScreen extends StatefulWidget {
   final WordStats word;
@@ -78,10 +79,11 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                     style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                SpeakerButton(
                   onPressed: () => _speakWord(widget.word.wordStem),
-                  tooltip: 'Pronounce',
+                  size: 36,
+                  backgroundColor: Colors.white10,
+                  iconColor: Colors.tealAccent,
                 ),
               ],
             ),

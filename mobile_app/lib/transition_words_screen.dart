@@ -3,6 +3,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'db_helper.dart';
 import 'models.dart';
 import 'word_detail_screen.dart';
+import 'widgets/speaker_button.dart';
 
 class TransitionWordsScreen extends StatefulWidget {
   final String title;
@@ -88,10 +89,11 @@ class _TransitionWordsScreenState extends State<TransitionWordsScreen> {
                     return ListTile(
                       title: Text(word.wordStem),
                       subtitle: Text(_statsText(word)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                      trailing: SpeakerButton(
                         onPressed: () => _speakWord(word.wordStem),
-                        tooltip: 'Pronounce',
+                        size: 34,
+                        backgroundColor: Colors.white10,
+                        iconColor: Colors.tealAccent,
                       ),
                       onTap: () async {
                         await Navigator.push(

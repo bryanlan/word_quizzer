@@ -5,6 +5,7 @@ import 'db_helper.dart';
 import 'models.dart';
 import 'quiz_report_screen.dart';
 import 'tts_service.dart';
+import 'widgets/speaker_button.dart';
 
 class QuizScreen extends StatefulWidget {
   const QuizScreen({super.key});
@@ -248,10 +249,11 @@ class _QuizScreenState extends State<QuizScreen> {
             Row(
               children: [
                 Expanded(child: Text(word.wordStem)),
-                IconButton(
-                  icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                SpeakerButton(
                   onPressed: () => _speakWord(word.wordStem),
-                  tooltip: 'Pronounce',
+                  size: 34,
+                  backgroundColor: Colors.white10,
+                  iconColor: Colors.tealAccent,
                 ),
               ],
             ),
@@ -377,21 +379,11 @@ class _QuizScreenState extends State<QuizScreen> {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              Material(
-                                color: Colors.tealAccent,
-                                shape: const CircleBorder(),
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: () => _speakWord(currentWord.wordStem),
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(8.0),
-                                    child: Icon(
-                                      Icons.volume_up,
-                                      color: Colors.black,
-                                      size: 28,
-                                    ),
-                                  ),
-                                ),
+                              SpeakerButton(
+                                onPressed: () => _speakWord(currentWord.wordStem),
+                                size: 44,
+                                backgroundColor: Colors.tealAccent,
+                                iconColor: Colors.black,
                               ),
                             ],
                           );

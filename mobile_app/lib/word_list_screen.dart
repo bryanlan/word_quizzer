@@ -4,6 +4,7 @@ import 'db_helper.dart';
 import 'models.dart';
 import 'word_detail_screen.dart';
 import 'tts_service.dart';
+import 'widgets/speaker_button.dart';
 
 class WordListScreen extends StatefulWidget {
   final String status;
@@ -82,10 +83,11 @@ class _WordListScreenState extends State<WordListScreen> {
                     return ListTile(
                       title: Text(word.wordStem),
                       subtitle: Text(_statsText(word)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.volume_up, color: Colors.tealAccent),
+                      trailing: SpeakerButton(
                         onPressed: () => _speakWord(word.wordStem),
-                        tooltip: 'Pronounce',
+                        size: 34,
+                        backgroundColor: Colors.white10,
+                        iconColor: Colors.tealAccent,
                       ),
                       onTap: () async {
                         await Navigator.push(
