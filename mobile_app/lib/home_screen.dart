@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'db_helper.dart';
 import 'quiz_screen.dart';
 import 'settings_screen.dart';
@@ -8,11 +7,12 @@ import 'stats_screen.dart';
 import 'word_list_screen.dart';
 import 'add_word_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'db_import.dart';
 import 'word_enrichment_service.dart';
 import 'auth_service.dart';
 import 'sync_service.dart';
 import 'pwa_update.dart';
+import 'import_kindle_screen.dart';
+import 'word_management_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -201,15 +201,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${parts.join('. ')}.';
   }
 
-  Future<void> _importDb() async {
-    if (!supportsDatabaseFileImport) {
+  Future<void> _openAddWord() async {
+    if (!canAddWord) {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text("Import Unavailable"),
-          content: const Text(
-            "Database import isn't supported in the web app yet. "
-            "Use the desktop app to import, or add words manually.",
+          title: const Text("OpenRouter Key Required"),
+          content: Text(
+            kIsWeb
+                ? "The server OpenRouter key isn't configured yet."
+                : "Add your OpenRouter API key in Settings to create new words.",
           ),
           actions: [
             TextButton(
@@ -221,29 +222,41 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-
-    FilePickerResult? result = await FilePicker.platform.pickFiles();
-
-    if (result != null) {
-      final filePath = result.files.single.path;
-      if (filePath == null || filePath.isEmpty) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AddWordScreen(),
+      ),
+    ).then((result) {
+      _refreshStats();
+      if (result is Map) {
+        final added = (result['added'] as List?)?.cast<String>() ?? [];
+        final skipped = (result['skipped'] as List?)?.cast<String>() ?? [];
+        final failed = (result['failed'] as List?)?.cast<String>() ?? [];
+        final message = _buildAddWordSummary(added, skipped, failed);
+        if (message.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
+      } else if (result is String && result.trim().isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to read selected file.')),
+          SnackBar(content: Text('Added \"$result\".')),
         );
-        return;
       }
-      try {
-        await DatabaseHelper.instance.importDatabase(filePath);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Database Imported Successfully!'))
-        );
-        _refreshStats();
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error importing: $e'))
-        );
-      }
-    }
+    });
+  }
+
+  void _openDrawerRoute(Widget screen) {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => screen),
+    ).then((_) {
+      _loadApiKey();
+      _loadDisplayName();
+      _refreshStats();
+    });
   }
 
   @override
@@ -253,87 +266,63 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text("Vocab Master"),
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.add,
-              color: canAddWord ? null : Colors.grey,
-            ),
-            onPressed: () {
-              if (!canAddWord) {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text("OpenRouter Key Required"),
-                    content: Text(
-                      kIsWeb
-                          ? "The server OpenRouter key isn't configured yet."
-                          : "Add your OpenRouter API key in Settings to create new words.",
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text("OK"),
-                      ),
-                    ],
-                  ),
-                );
-                return;
-              }
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AddWordScreen(),
-                ),
-              ).then((result) {
-                _refreshStats();
-                if (result is Map) {
-                  final added = (result['added'] as List?)?.cast<String>() ?? [];
-                  final skipped = (result['skipped'] as List?)?.cast<String>() ?? [];
-                  final failed = (result['failed'] as List?)?.cast<String>() ?? [];
-                  final message = _buildAddWordSummary(added, skipped, failed);
-                  if (message.isNotEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(message)),
-                    );
-                  }
-                } else if (result is String && result.trim().isNotEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Added \"$result\".')),
-                  );
-                }
-              });
-            },
-            tooltip: 'Add Word',
-          ),
-          IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () {
-               Navigator.push(
+              Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const StatsScreen()),
               );
             },
             tooltip: 'Analytics',
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              ).then((_) {
-                _loadApiKey();
-                _loadDisplayName();
-                _refreshStats();
-              });
-            },
-            tooltip: 'Settings',
-          ),
-          IconButton(
-            icon: const Icon(Icons.upload_file),
-            onPressed: _importDb,
-            tooltip: 'Import Database',
-          )
         ],
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(color: Colors.teal),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Word Quizzer',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    displayName,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.library_books),
+              title: const Text('Word Management'),
+              onTap: () => _openDrawerRoute(const WordManagementScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_upload),
+              title: const Text('Import from Kindle'),
+              onTap: () => _openDrawerRoute(const ImportKindleScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline),
+              title: const Text('Add Word'),
+              onTap: () {
+                Navigator.pop(context);
+                _openAddWord();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Settings'),
+              onTap: () => _openDrawerRoute(const SettingsScreen()),
+            ),
+          ],
+        ),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
