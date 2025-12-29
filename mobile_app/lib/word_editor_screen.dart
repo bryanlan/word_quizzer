@@ -237,20 +237,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     }
   }
 
-  void _addExample() {
-    setState(() {
-      _exampleControllers.add(TextEditingController());
-    });
-  }
-
-  void _removeExample(int index) {
-    final controller = _exampleControllers[index];
-    controller.dispose();
-    setState(() {
-      _exampleControllers.removeAt(index);
-    });
-  }
-
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -349,25 +335,13 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
               final controller = entry.value;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        maxLines: null,
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          hintText: 'Example sentence ${index + 1}',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: _isSaving ? null : () => _removeExample(index),
-                    ),
-                  ],
+                child: TextField(
+                  controller: controller,
+                  maxLines: null,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    hintText: 'Example sentence ${index + 1}',
+                  ),
                 ),
               );
             }),
@@ -375,10 +349,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
               spacing: 12,
               runSpacing: 8,
               children: [
-                OutlinedButton(
-                  onPressed: _isSaving ? null : _addExample,
-                  child: const Text('Add'),
-                ),
                 ElevatedButton(
                   onPressed: _isSaving ? null : _saveExamples,
                   child: const Text('Save'),
