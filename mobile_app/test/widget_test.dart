@@ -4,8 +4,9 @@ import 'package:vocab_master/llm_modes.dart';
 
 void main() {
   test('WordLlmMode labels are present', () {
-    expect(WordLlmMode.values, hasLength(2));
-    expect(WordLlmMode.distractors.label, isNotEmpty);
-    expect(WordLlmMode.tier.label, isNotEmpty);
+    expect(WordLlmMode.values, hasLength(4));
+    for (final mode in WordLlmMode.values) {
+      expect(mode.label, isNotEmpty);
+    }
   });
 }

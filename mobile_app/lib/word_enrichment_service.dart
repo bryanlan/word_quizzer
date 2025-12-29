@@ -32,6 +32,37 @@ class WordEnrichmentService {
     return service.enrichWord(word);
   }
 
+  static Future<List<String>> regenerateExamples(String word) async {
+    if (kIsWeb) {
+      return _regenerateExamplesViaServer(word);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getString('openrouter_api_key') ?? '';
+    if (key.trim().isEmpty) {
+      throw MissingApiKeyException();
+    }
+    final service = OpenRouterService(key.trim());
+    final result = await service.enrichWord(word);
+    return result.examples;
+  }
+
+  static Future<List<String>> regenerateDistractors(
+    String word,
+    String definition,
+  ) async {
+    if (kIsWeb) {
+      return _regenerateDistractorsViaServer(word, definition);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getString('openrouter_api_key') ?? '';
+    if (key.trim().isEmpty) {
+      throw MissingApiKeyException();
+    }
+    final service = OpenRouterService(key.trim());
+    final result = await service.enrichWord(word);
+    return result.distractors;
+  }
+
   static Future<void> setServerKey(String apiKey) async {
     if (!kIsWeb) {
       throw UnsupportedError('Server keys are managed on web only.');
@@ -114,6 +145,79 @@ class WordEnrichmentService {
       examples: examples,
       distractors: distractors,
     );
+  }
+
+  static Future<List<String>> _regenerateExamplesViaServer(String word) async {
+    final token = await AuthService.getToken();
+    if (token == null || token.trim().isEmpty) {
+      throw NotAuthenticatedException();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl = prefs.getString('sync_server_url') ?? _defaultServerUrl;
+    final url = Uri.parse('${_normalize(baseUrl)}/llm/regenerate-examples');
+    final response = await http.post(
+      url,
+      headers: _headers(token),
+      body: jsonEncode({'word': word}),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw NotAuthenticatedException();
+    }
+    if (response.statusCode == 412 || response.statusCode == 424) {
+      throw MissingApiKeyException('Server OpenRouter key is missing.');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = _extractErrorMessage(response.body);
+      if (_looksLikeMissingKey(message)) {
+        throw MissingApiKeyException('Server OpenRouter key is missing.');
+      }
+      final suffix = message.isEmpty ? '' : ' - $message';
+      throw Exception('Server error: ${response.statusCode}$suffix');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final examples = _normalizeList(decoded['examples']);
+    if (examples.isEmpty) {
+      throw Exception('Server response missing examples.');
+    }
+    return examples;
+  }
+
+  static Future<List<String>> _regenerateDistractorsViaServer(
+    String word,
+    String definition,
+  ) async {
+    final token = await AuthService.getToken();
+    if (token == null || token.trim().isEmpty) {
+      throw NotAuthenticatedException();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl = prefs.getString('sync_server_url') ?? _defaultServerUrl;
+    final url = Uri.parse('${_normalize(baseUrl)}/llm/regenerate-distractors');
+    final response = await http.post(
+      url,
+      headers: _headers(token),
+      body: jsonEncode({'word': word, 'definition': definition}),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw NotAuthenticatedException();
+    }
+    if (response.statusCode == 412 || response.statusCode == 424) {
+      throw MissingApiKeyException('Server OpenRouter key is missing.');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = _extractErrorMessage(response.body);
+      if (_looksLikeMissingKey(message)) {
+        throw MissingApiKeyException('Server OpenRouter key is missing.');
+      }
+      final suffix = message.isEmpty ? '' : ' - $message';
+      throw Exception('Server error: ${response.statusCode}$suffix');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final distractors = _normalizeList(decoded['distractors']);
+    if (distractors.isEmpty) {
+      throw Exception('Server response missing distractors.');
+    }
+    return distractors;
   }
 
   static Future<int> requestTier(String word) async {

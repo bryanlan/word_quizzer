@@ -225,6 +225,9 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
     final ids = _selectedIds.toList();
     if (ids.isEmpty) return;
     final stems = await DatabaseHelper.instance.getWordStemsByIds(ids);
+    final definitions = mode == WordLlmMode.distractors
+        ? await DatabaseHelper.instance.getWordDefinitionsByIds(ids)
+        : <int, String>{};
     if (!mounted) return;
     final entries = stems.entries.toList()
       ..sort((a, b) => a.value.compareTo(b.value));
@@ -277,13 +280,39 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       currentWord = entry.value;
       dialogSetState(() {});
       try {
-        if (mode == WordLlmMode.tier) {
-          final tier = await WordEnrichmentService.requestTier(entry.value);
-          await DatabaseHelper.instance.updateWordTier(entry.key, tier);
-        } else {
-          final result = await WordEnrichmentService.enrichWord(entry.value);
-          await DatabaseHelper.instance
-              .replaceDistractorsForWord(entry.key, result.distractors);
+        switch (mode) {
+          case WordLlmMode.tier:
+            final tier = await WordEnrichmentService.requestTier(entry.value);
+            await DatabaseHelper.instance.updateWordTier(entry.key, tier);
+            break;
+          case WordLlmMode.examples:
+            final examples =
+                await WordEnrichmentService.regenerateExamples(entry.value);
+            await DatabaseHelper.instance
+                .replaceExamplesForWord(entry.key, examples);
+            break;
+          case WordLlmMode.distractors:
+            final definition = definitions[entry.key]?.trim() ?? '';
+            if (definition.isEmpty) {
+              throw Exception('Missing definition.');
+            }
+            final distractors =
+                await WordEnrichmentService.regenerateDistractors(
+              entry.value,
+              definition,
+            );
+            await DatabaseHelper.instance
+                .replaceDistractorsForWord(entry.key, distractors);
+            break;
+          case WordLlmMode.enrich:
+            final result = await WordEnrichmentService.enrichWord(entry.value);
+            await DatabaseHelper.instance
+                .updateWordDefinition(entry.key, result.definition);
+            await DatabaseHelper.instance
+                .replaceExamplesForWord(entry.key, result.examples);
+            await DatabaseHelper.instance
+                .replaceDistractorsForWord(entry.key, result.distractors);
+            break;
         }
       } catch (_) {
         failures += 1;
@@ -324,16 +353,22 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       context: context,
       builder: (ctx) => ListView(
         shrinkWrap: true,
-        children: _statusFilters
-            .where((status) => status != 'All')
-            .map((status) => ListTile(
-                  title: Text(status),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _applyStatusToSelection(status);
-                  },
-                ))
-            .toList(),
+        children: [
+          ..._statusFilters
+              .where((status) => status != 'All')
+              .map((status) => ListTile(
+                    title: Text(status),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _applyStatusToSelection(status);
+                    },
+                  )),
+          ListTile(
+            leading: const Icon(Icons.close),
+            title: const Text('Cancel'),
+            onTap: () => Navigator.pop(ctx),
+          ),
+        ],
       ),
     );
   }
@@ -344,13 +379,6 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       builder: (ctx) => ListView(
         shrinkWrap: true,
         children: [
-          ListTile(
-            title: const Text('Auto'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _applyTierToSelection(null);
-            },
-          ),
           ...List.generate(5, (index) {
             final tier = index + 1;
             return ListTile(
@@ -361,6 +389,11 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
               },
             );
           }),
+          ListTile(
+            leading: const Icon(Icons.close),
+            title: const Text('Cancel'),
+            onTap: () => Navigator.pop(ctx),
+          ),
         ],
       ),
     );
@@ -371,111 +404,293 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
       context: context,
       builder: (ctx) => ListView(
         shrinkWrap: true,
-        children: WordLlmMode.values
-            .map((mode) => ListTile(
-                  title: Text(mode.label),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _runLlmForSelection(mode);
-                  },
-                ))
-            .toList(),
+        children: [
+          ...WordLlmMode.values.map((mode) => ListTile(
+                title: Text(mode.label),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _runLlmForSelection(mode);
+                },
+              )),
+          ListTile(
+            leading: const Icon(Icons.close),
+            title: const Text('Cancel'),
+            onTap: () => Navigator.pop(ctx),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildFilters() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: _searchController,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            hintText: 'Search words...',
-            border: OutlineInputBorder(),
+  Widget _buildFilterButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final background =
+        selected ? scheme.primary.withAlpha(45) : Colors.transparent;
+    final border = selected ? scheme.primary : Colors.white24;
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: border),
           ),
-          onChanged: _onSearchChanged,
+          child: Center(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _statusFilters.map((status) {
-            return ChoiceChip(
-              label: Text(status),
-              selected: _statusFilter == status,
-              onSelected: (_) {
-                setState(() {
-                  _statusFilter = status;
-                });
+      ),
+    );
+  }
+
+  Widget _buildFilterRow(List<Widget?> cells) {
+    final padded = [...cells];
+    while (padded.length < 3) {
+      padded.add(null);
+    }
+
+    final children = <Widget>[];
+    for (var i = 0; i < 3; i++) {
+      if (i > 0) {
+        children.add(const SizedBox(width: 10));
+      }
+      children.add(Expanded(child: padded[i] ?? const SizedBox.shrink()));
+    }
+    return Row(children: children);
+  }
+
+  Widget _buildFilterSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildFiltersCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.filter_list),
+              SizedBox(width: 8),
+              Text('Filters', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchController,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Search words...',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: _onSearchChanged,
+          ),
+          const SizedBox(height: 18),
+          _buildFilterSectionTitle('Learning State'),
+          const SizedBox(height: 6),
+          _buildFilterRow([
+            _buildFilterButton(
+              label: 'All',
+              selected: _statusFilter == 'All',
+              onTap: () {
+                setState(() => _statusFilter = 'All');
                 _applyFilters();
               },
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('All tiers'),
+            ),
+            _buildFilterButton(
+              label: 'New',
+              selected: _statusFilter == 'New',
+              onTap: () {
+                setState(() => _statusFilter = 'New');
+                _applyFilters();
+              },
+            ),
+            null,
+          ]),
+          const SizedBox(height: 10),
+          _buildFilterRow([
+            _buildFilterButton(
+              label: 'On Deck',
+              selected: _statusFilter == 'On Deck',
+              onTap: () {
+                setState(() => _statusFilter = 'On Deck');
+                _applyFilters();
+              },
+            ),
+            _buildFilterButton(
+              label: 'Learning',
+              selected: _statusFilter == 'Learning',
+              onTap: () {
+                setState(() => _statusFilter = 'Learning');
+                _applyFilters();
+              },
+            ),
+            _buildFilterButton(
+              label: 'Proficient',
+              selected: _statusFilter == 'Proficient',
+              onTap: () {
+                setState(() => _statusFilter = 'Proficient');
+                _applyFilters();
+              },
+            ),
+          ]),
+          const SizedBox(height: 10),
+          _buildFilterRow([
+            _buildFilterButton(
+              label: 'Adept',
+              selected: _statusFilter == 'Adept',
+              onTap: () {
+                setState(() => _statusFilter = 'Adept');
+                _applyFilters();
+              },
+            ),
+            _buildFilterButton(
+              label: 'Mastered',
+              selected: _statusFilter == 'Mastered',
+              onTap: () {
+                setState(() => _statusFilter = 'Mastered');
+                _applyFilters();
+              },
+            ),
+            _buildFilterButton(
+              label: 'Ignored',
+              selected: _statusFilter == 'Ignored',
+              onTap: () {
+                setState(() => _statusFilter = 'Ignored');
+                _applyFilters();
+              },
+            ),
+          ]),
+          const SizedBox(height: 18),
+          _buildFilterSectionTitle('Priority Tier'),
+          const Text(
+            'Tier 1 = highest priority to be pulled into Learning. Tier 5 = lowest.',
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 10),
+          _buildFilterRow([
+            _buildFilterButton(
+              label: 'All',
               selected: _tierFilter == null,
-              onSelected: (_) {
-                setState(() {
-                  _tierFilter = null;
-                });
+              onTap: () {
+                setState(() => _tierFilter = null);
                 _applyFilters();
               },
             ),
-            ChoiceChip(
-              label: const Text('Auto'),
-              selected: _tierFilter == 0,
-              onSelected: (_) {
-                setState(() {
-                  _tierFilter = 0;
-                });
+            _buildFilterButton(
+              label: 'Tier 1',
+              selected: _tierFilter == 1,
+              onTap: () {
+                setState(() => _tierFilter = 1);
                 _applyFilters();
               },
             ),
-            ...List.generate(5, (index) {
-              final tier = index + 1;
-              return ChoiceChip(
-                label: Text('Tier $tier'),
-                selected: _tierFilter == tier,
-                onSelected: (_) {
-                  setState(() {
-                    _tierFilter = tier;
-                  });
-                  _applyFilters();
-                },
-              );
-            }),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: _letters.map((letter) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ChoiceChip(
-                  label: Text(letter),
-                  selected: _letterFilter == letter,
-                  onSelected: (_) {
-                    setState(() {
-                      _letterFilter = letter;
-                    });
-                    _applyFilters();
-                  },
-                ),
-              );
-            }).toList(),
+            _buildFilterButton(
+              label: 'Tier 2',
+              selected: _tierFilter == 2,
+              onTap: () {
+                setState(() => _tierFilter = 2);
+                _applyFilters();
+              },
+            ),
+          ]),
+          const SizedBox(height: 10),
+          _buildFilterRow([
+            _buildFilterButton(
+              label: 'Tier 3',
+              selected: _tierFilter == 3,
+              onTap: () {
+                setState(() => _tierFilter = 3);
+                _applyFilters();
+              },
+            ),
+            _buildFilterButton(
+              label: 'Tier 4',
+              selected: _tierFilter == 4,
+              onTap: () {
+                setState(() => _tierFilter = 4);
+                _applyFilters();
+              },
+            ),
+            _buildFilterButton(
+              label: 'Tier 5',
+              selected: _tierFilter == 5,
+              onTap: () {
+                setState(() => _tierFilter = 5);
+                _applyFilters();
+              },
+            ),
+          ]),
+          const SizedBox(height: 18),
+          _buildFilterSectionTitle('Starts With'),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _letters.map((letter) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(letter),
+                    selected: _letterFilter == letter,
+                    onSelected: (_) {
+                      setState(() {
+                        _letterFilter = letter;
+                      });
+                      _applyFilters();
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWordsHeader() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Words', style: TextStyle(fontWeight: FontWeight.bold)),
+          SizedBox(height: 6),
+          Text(
+            'Tip: long-press a word to multi-select for bulk actions.',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 
@@ -566,8 +781,10 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _buildFilters(),
+                  _buildFiltersCard(),
                   const SizedBox(height: 16),
+                  _buildWordsHeader(),
+                  const SizedBox(height: 12),
                   _buildSelectionBar(),
                   if (_words.isEmpty)
                     const Padding(

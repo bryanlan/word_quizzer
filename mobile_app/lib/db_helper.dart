@@ -1521,6 +1521,36 @@ class DatabaseHelper {
     return result;
   }
 
+  Future<Map<int, String>> getWordDefinitionsByIds(List<int> ids) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words') || ids.isEmpty) {
+      return {};
+    }
+
+    final result = <int, String>{};
+    const int chunkSize = 900;
+    for (var start = 0; start < ids.length; start += chunkSize) {
+      final chunk = ids.sublist(
+        start,
+        start + chunkSize > ids.length ? ids.length : start + chunkSize,
+      );
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      final rows = await db.query(
+        'words',
+        columns: ['id', 'definition'],
+        where: 'id IN ($placeholders)',
+        whereArgs: chunk,
+      );
+
+      for (final row in rows) {
+        final id = row['id'] as int? ?? 0;
+        if (id == 0) continue;
+        result[id] = row['definition']?.toString().trim() ?? '';
+      }
+    }
+    return result;
+  }
+
   Future<Word?> getWordById(int id) async {
     final db = await database;
     if (!await _hasTable(db, 'words')) {

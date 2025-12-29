@@ -176,15 +176,44 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     );
     didShowDialog = true;
     try {
-      if (mode == WordLlmMode.tier) {
-        final tier = await WordEnrichmentService.requestTier(wordStem);
-        await DatabaseHelper.instance.updateWordTier(_word!.id, tier);
-      } else {
-        final result = await WordEnrichmentService.enrichWord(wordStem);
-        await DatabaseHelper.instance.replaceDistractorsForWord(
-          _word!.id,
-          result.distractors,
-        );
+      switch (mode) {
+        case WordLlmMode.tier:
+          final tier = await WordEnrichmentService.requestTier(wordStem);
+          await DatabaseHelper.instance.updateWordTier(_word!.id, tier);
+          break;
+        case WordLlmMode.examples:
+          final examples =
+              await WordEnrichmentService.regenerateExamples(wordStem);
+          await DatabaseHelper.instance
+              .replaceExamplesForWord(_word!.id, examples);
+          break;
+        case WordLlmMode.distractors:
+          final definition = _definitionController.text.trim();
+          if (definition.isEmpty) {
+            throw Exception('Missing definition for distractors.');
+          }
+          final distractors = await WordEnrichmentService.regenerateDistractors(
+              wordStem, definition);
+          await DatabaseHelper.instance.replaceDistractorsForWord(
+            _word!.id,
+            distractors,
+          );
+          break;
+        case WordLlmMode.enrich:
+          final result = await WordEnrichmentService.enrichWord(wordStem);
+          await DatabaseHelper.instance.updateWordDefinition(
+            _word!.id,
+            result.definition,
+          );
+          await DatabaseHelper.instance.replaceExamplesForWord(
+            _word!.id,
+            result.examples,
+          );
+          await DatabaseHelper.instance.replaceDistractorsForWord(
+            _word!.id,
+            result.distractors,
+          );
+          break;
       }
       await _loadWord();
       if (!mounted) return;
@@ -342,16 +371,22 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                 ),
               );
             }),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 OutlinedButton(
                   onPressed: _isSaving ? null : _addExample,
-                  child: const Text('Add Example'),
+                  child: const Text('Add'),
                 ),
-                const SizedBox(width: 12),
                 ElevatedButton(
                   onPressed: _isSaving ? null : _saveExamples,
-                  child: const Text('Save Examples'),
+                  child: const Text('Save'),
+                ),
+                OutlinedButton(
+                  onPressed:
+                      _isSaving ? null : () => _runLlm(WordLlmMode.examples),
+                  child: const Text('Regenerate (LLM)'),
                 ),
               ],
             ),
