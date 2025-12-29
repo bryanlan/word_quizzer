@@ -26,7 +26,6 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
     'Adept',
     'Mastered',
     'Ignored',
-    'Pau(S)ed',
   ];
 
   static const List<String> _letters = [

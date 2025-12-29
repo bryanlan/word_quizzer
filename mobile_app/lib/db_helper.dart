@@ -33,6 +33,7 @@ class DatabaseHelper {
     await _ensureStatusLogSchema(db);
     await _ensureScoreLogSchema(db);
     await _ensureQuizSessionSchema(db);
+    await _migratePausedStatus(db);
     _database = db;
     return _database!;
   }
@@ -66,6 +67,7 @@ class DatabaseHelper {
     await _ensureStatusLogSchema(_database!);
     await _ensureScoreLogSchema(_database!);
     await _ensureQuizSessionSchema(_database!);
+    await _migratePausedStatus(_database!);
   }
 
   Future<void> _ensureBaseSchema(Database db) async {
@@ -77,7 +79,7 @@ class DatabaseHelper {
         book_title TEXT,
         definition TEXT,
         phonetic TEXT,
-        status TEXT CHECK(status IN ('New', 'On Deck', 'Learning', 'Proficient', 'Adept', 'Mastered', 'Ignored', 'Pau(S)ed')) DEFAULT 'New',
+        status TEXT CHECK(status IN ('New', 'On Deck', 'Learning', 'Proficient', 'Adept', 'Mastered', 'Ignored')) DEFAULT 'New',
         bucket_date DATE,
         next_review_date DATE,
         difficulty_score INTEGER,
@@ -150,6 +152,21 @@ class DatabaseHelper {
         severity INTEGER
       );
     """);
+  }
+
+  Future<void> _migratePausedStatus(Database db) async {
+    if (!await _hasTable(db, 'words')) {
+      return;
+    }
+    await db.update(
+      'words',
+      {
+        'status': 'Ignored',
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'status = ?',
+      whereArgs: ['Pau(S)ed'],
+    );
   }
 
   Future<void> _ensureStudyLogSchema(Database db) async {
@@ -259,7 +276,7 @@ class DatabaseHelper {
           book_title TEXT,
           definition TEXT,
           phonetic TEXT,
-          status TEXT CHECK(status IN ('New', 'On Deck', 'Learning', 'Proficient', 'Adept', 'Mastered', 'Ignored', 'Pau(S)ed')) DEFAULT 'New',
+          status TEXT CHECK(status IN ('New', 'On Deck', 'Learning', 'Proficient', 'Adept', 'Mastered', 'Ignored')) DEFAULT 'New',
           bucket_date DATE,
           next_review_date DATE,
           difficulty_score INTEGER,

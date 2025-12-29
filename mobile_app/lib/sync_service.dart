@@ -131,6 +131,29 @@ class SyncService {
     return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
+  String _normalizeStatus(dynamic raw) {
+    final status = raw?.toString().trim() ?? '';
+    if (status.isEmpty) {
+      return 'New';
+    }
+    if (status == 'Pau(S)ed' || status.toLowerCase() == 'paused') {
+      return 'Ignored';
+    }
+    const allowed = {
+      'New',
+      'On Deck',
+      'Learning',
+      'Proficient',
+      'Adept',
+      'Mastered',
+      'Ignored',
+    };
+    if (allowed.contains(status)) {
+      return status;
+    }
+    return 'New';
+  }
+
   Future<Set<String>> _mergeServerData(
     Database db,
     Map<String, dynamic> exportData,
@@ -185,9 +208,10 @@ class SyncService {
     final serverExamples = (exportData['examples'] as List<dynamic>? ?? [])
         .map((row) => Map<String, dynamic>.from(row))
         .toList();
-    final serverDistractors = (exportData['distractors'] as List<dynamic>? ?? [])
-        .map((row) => Map<String, dynamic>.from(row))
-        .toList();
+    final serverDistractors =
+        (exportData['distractors'] as List<dynamic>? ?? [])
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
 
     final localExamples = await db.query(
       'examples',
@@ -274,7 +298,7 @@ class SyncService {
             'book_title': server?['book_title'],
             'definition': server?['definition'],
             'phonetic': server?['phonetic'],
-            'status': server?['status'] ?? 'New',
+            'status': _normalizeStatus(server?['status']),
             'bucket_date': server?['bucket_date'],
             'next_review_date': server?['next_review_date'],
             'difficulty_score': server?['difficulty_score'],
@@ -307,7 +331,7 @@ class SyncService {
               'book_title': server['book_title'],
               'definition': server['definition'],
               'phonetic': server['phonetic'],
-              'status': server['status'] ?? 'New',
+              'status': _normalizeStatus(server['status']),
               'bucket_date': server['bucket_date'],
               'next_review_date': server['next_review_date'],
               'difficulty_score': server['difficulty_score'],
@@ -329,7 +353,8 @@ class SyncService {
             ? (localDistractorsByWordId[localId] ?? [])
             : (serverDistractorsByStem[stem] ?? []);
 
-        await txn.delete('examples', where: 'word_id = ?', whereArgs: [localId]);
+        await txn
+            .delete('examples', where: 'word_id = ?', whereArgs: [localId]);
         for (final sentence in selectedExamples) {
           await txn.insert('examples', {
             'word_id': localId,
@@ -337,7 +362,8 @@ class SyncService {
           });
         }
 
-        await txn.delete('distractors', where: 'word_id = ?', whereArgs: [localId]);
+        await txn
+            .delete('distractors', where: 'word_id = ?', whereArgs: [localId]);
         for (final text in selectedDistractors) {
           await txn.insert('distractors', {
             'word_id': localId,
@@ -432,9 +458,10 @@ class SyncService {
         localStatusKeys.add(key);
       }
 
-      final serverStatusRows = (exportData['status_log'] as List<dynamic>? ?? [])
-          .map((row) => Map<String, dynamic>.from(row))
-          .toList();
+      final serverStatusRows =
+          (exportData['status_log'] as List<dynamic>? ?? [])
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
       for (final row in serverStatusRows) {
         final serverWordId = row['word_id'];
         if (serverWordId is! int) {
@@ -468,7 +495,14 @@ class SyncService {
 
       final localScoreRows = await txn.query(
         'score_log',
-        columns: ['word_id', 'points', 'reason', 'mode', 'timestamp', 'session_id'],
+        columns: [
+          'word_id',
+          'points',
+          'reason',
+          'mode',
+          'timestamp',
+          'session_id'
+        ],
       );
       final localScoreKeys = <String>{};
       for (final row in localScoreRows) {
@@ -595,73 +629,88 @@ class SyncService {
         FROM examples e
         WHERE e.word_id IN ($placeholders)
       ''', wordIds);
-      examples = exampleRows.map((row) {
-        final localId = row['word_id'] as int;
-        return {
-          'word_id': wordIdByLocalId[localId],
-          'sentence': row['sentence'],
-        };
-      }).where((row) => row['word_id'] != null).toList();
+      examples = exampleRows
+          .map((row) {
+            final localId = row['word_id'] as int;
+            return {
+              'word_id': wordIdByLocalId[localId],
+              'sentence': row['sentence'],
+            };
+          })
+          .where((row) => row['word_id'] != null)
+          .toList();
 
       final distractorRows = await db.rawQuery('''
         SELECT d.text, d.word_id
         FROM distractors d
         WHERE d.word_id IN ($placeholders)
       ''', wordIds);
-      distractors = distractorRows.map((row) {
-        final localId = row['word_id'] as int;
-        return {
-          'word_id': wordIdByLocalId[localId],
-          'text': row['text'],
-        };
-      }).where((row) => row['word_id'] != null).toList();
+      distractors = distractorRows
+          .map((row) {
+            final localId = row['word_id'] as int;
+            return {
+              'word_id': wordIdByLocalId[localId],
+              'text': row['text'],
+            };
+          })
+          .where((row) => row['word_id'] != null)
+          .toList();
 
       final studyRows = await db.rawQuery('''
         SELECT l.result, l.timestamp, l.session_id, l.word_id
         FROM study_log l
         WHERE l.word_id IN ($placeholders)
       ''', wordIds);
-      studyLog = studyRows.map((row) {
-        final localId = row['word_id'] as int;
-        return {
-          'word_id': wordIdByLocalId[localId],
-          'result': row['result'],
-          'session_id': row['session_id'],
-          'timestamp': row['timestamp'],
-        };
-      }).where((row) => row['word_id'] != null).toList();
+      studyLog = studyRows
+          .map((row) {
+            final localId = row['word_id'] as int;
+            return {
+              'word_id': wordIdByLocalId[localId],
+              'result': row['result'],
+              'session_id': row['session_id'],
+              'timestamp': row['timestamp'],
+            };
+          })
+          .where((row) => row['word_id'] != null)
+          .toList();
 
       final statusRows = await db.rawQuery('''
         SELECT l.from_status, l.to_status, l.timestamp, l.word_id
         FROM status_log l
         WHERE l.word_id IN ($placeholders)
       ''', wordIds);
-      statusLog = statusRows.map((row) {
-        final localId = row['word_id'] as int;
-        return {
-          'word_id': wordIdByLocalId[localId],
-          'from_status': row['from_status'],
-          'to_status': row['to_status'],
-          'timestamp': row['timestamp'],
-        };
-      }).where((row) => row['word_id'] != null).toList();
+      statusLog = statusRows
+          .map((row) {
+            final localId = row['word_id'] as int;
+            return {
+              'word_id': wordIdByLocalId[localId],
+              'from_status': row['from_status'],
+              'to_status': row['to_status'],
+              'timestamp': row['timestamp'],
+            };
+          })
+          .where((row) => row['word_id'] != null)
+          .toList();
 
       final scoreRows = await db.rawQuery('''
         SELECT l.points, l.reason, l.mode, l.timestamp, l.session_id, l.word_id
         FROM score_log l
         WHERE l.word_id IN ($placeholders)
       ''', wordIds);
-      scoreLog = scoreRows.map((row) {
-        final localId = row['word_id'] as int;
-        return {
-          'word_id': wordIdByLocalId[localId],
-          'points': row['points'],
-          'reason': row['reason'],
-          'mode': row['mode'],
-          'timestamp': row['timestamp'],
-          'session_id': row['session_id'],
-        };
-      }).where((row) => row['word_id'] != null).toList();
+      scoreLog = scoreRows
+          .map((row) {
+            final localId = row['word_id'] as int;
+            return {
+              'word_id': wordIdByLocalId[localId],
+              'points': row['points'],
+              'reason': row['reason'],
+              'mode': row['mode'],
+              'timestamp': row['timestamp'],
+              'session_id': row['session_id'],
+            };
+          })
+          .where((row) => row['word_id'] != null)
+          .toList();
     }
 
     final wordPayload = words.map((row) {

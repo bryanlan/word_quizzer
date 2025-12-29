@@ -23,7 +23,6 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     'Adept',
     'Mastered',
     'Ignored',
-    'Pau(S)ed',
   ];
 
   late String currentStatus;
@@ -33,9 +32,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   @override
   void initState() {
     super.initState();
-    currentStatus = statusOptions.contains(widget.word.status)
-        ? widget.word.status
-        : 'New';
+    currentStatus =
+        statusOptions.contains(widget.word.status) ? widget.word.status : 'New';
     _initTts();
   }
 
@@ -49,7 +47,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
   String _percentCorrect() {
     if (widget.word.totalAttempts == 0) return "NA";
-    final percent = (widget.word.correctAttempts / widget.word.totalAttempts) * 100;
+    final percent =
+        (widget.word.correctAttempts / widget.word.totalAttempts) * 100;
     return "${percent.round()}%";
   }
 
@@ -76,7 +75,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                 Expanded(
                   child: Text(
                     widget.word.wordStem,
-                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                 ),
                 SpeakerButton(
@@ -90,14 +90,20 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
             const SizedBox(height: 12),
             Text(
               "Definition",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal[200]),
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.teal[200]),
             ),
             const SizedBox(height: 6),
             Text(definition),
             const SizedBox(height: 16),
             Text(
               "Usage",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal[200]),
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.teal[200]),
             ),
             const SizedBox(height: 6),
             Text(usage.isEmpty ? "No usage context available." : usage),
@@ -109,7 +115,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
             const SizedBox(height: 24),
             Text(
               "Update Status",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal[200]),
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.teal[200]),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
@@ -129,7 +138,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                       setState(() {
                         isSaving = true;
                       });
-                      await DatabaseHelper.instance.updateWordStatus(widget.word.id, value);
+                      await DatabaseHelper.instance
+                          .updateWordStatus(widget.word.id, value);
                       if (!mounted) return;
                       setState(() {
                         currentStatus = value;

@@ -23,7 +23,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     'Adept',
     'Mastered',
     'Ignored',
-    'Pau(S)ed',
   ];
 
   Word? _word;
