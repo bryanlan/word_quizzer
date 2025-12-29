@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'db_helper.dart';
 import 'llm_modes.dart';
 import 'models.dart';
+import 'word_editor_pager_screen.dart';
 import 'word_editor_screen.dart';
 import 'word_enrichment_service.dart';
 
@@ -335,11 +336,37 @@ class _WordManagementScreenState extends State<WordManagementScreen> {
     _applyFilters();
   }
 
-  void _openWordEditor(WordSummary word) {
+  Future<void> _openWordEditor(WordSummary word) async {
+    final ids = await DatabaseHelper.instance.getWordIdsForFilter(
+      status: _statusFilter,
+      tier: _tierFilter,
+      startsWith: _letterFilter,
+      search: _searchQuery,
+    );
+    if (!mounted) return;
+
+    if (ids.isEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => WordEditorScreen(wordId: word.id),
+        ),
+      ).then((_) {
+        if (mounted) {
+          _applyFilters();
+        }
+      });
+      return;
+    }
+
+    final index = ids.indexOf(word.id);
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WordEditorScreen(wordId: word.id),
+        builder: (context) => WordEditorPagerScreen(
+          wordIds: ids,
+          initialIndex: index == -1 ? 0 : index,
+        ),
       ),
     ).then((_) {
       if (mounted) {
