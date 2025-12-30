@@ -11,6 +11,29 @@ class DatabaseHelper {
 
   DatabaseHelper._init();
 
+  DateTime _parseUpdatedAt(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    return DateTime.tryParse(text) ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  Future<String> _nextWordUpdatedAt(DatabaseExecutor executor, int wordId) async {
+    final now = DateTime.now();
+    final rows = await executor.query(
+      'words',
+      columns: ['updated_at'],
+      where: 'id = ?',
+      whereArgs: [wordId],
+      limit: 1,
+    );
+    final current =
+        rows.isEmpty ? DateTime.fromMillisecondsSinceEpoch(0) : _parseUpdatedAt(rows.first['updated_at']);
+    final next = now.isAfter(current) ? now : current.add(const Duration(milliseconds: 1));
+    return next.toIso8601String();
+  }
+
   Future<bool> _hasTable(Database db, String tableName) async {
     final result = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -394,17 +417,22 @@ class DatabaseHelper {
     }
 
     final now = DateTime.now().toIso8601String();
-    final idList = selectedIds.join(',');
-    await db.update(
-      'words',
-      {
-        'status': 'Learning',
-        'bucket_date': now,
-        'next_review_date': null,
-        'updated_at': now,
-      },
-      where: 'id IN ($idList)',
-    );
+    await db.transaction((txn) async {
+      for (final id in selectedIds) {
+        final updatedAt = await _nextWordUpdatedAt(txn, id);
+        await txn.update(
+          'words',
+          {
+            'status': 'Learning',
+            'bucket_date': now,
+            'next_review_date': null,
+            'updated_at': updatedAt,
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
   }
 
   Future<List<Word>> _fetchWordsForStatus(
@@ -900,7 +928,7 @@ class DatabaseHelper {
         'status_correct_streak': newStreak,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': await _nextWordUpdatedAt(db, wordId),
       },
       where: 'id = ?',
       whereArgs: [wordId],
@@ -998,7 +1026,7 @@ class DatabaseHelper {
         'status_correct_streak': newStreak,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': await _nextWordUpdatedAt(db, wordId),
       },
       where: 'id = ?',
       whereArgs: [wordId],
@@ -1082,18 +1110,22 @@ class DatabaseHelper {
       return;
     }
 
-    await db.update(
-      'words',
-      {
-        'status': newStatus,
-        'bucket_date': DateTime.now().toIso8601String(),
-        'next_review_date': _nextReviewDateForStatus(newStatus),
-        'status_correct_streak': 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    final bucketDate = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      final updatedAt = await _nextWordUpdatedAt(txn, id);
+      await txn.update(
+        'words',
+        {
+          'status': newStatus,
+          'bucket_date': bucketDate,
+          'next_review_date': _nextReviewDateForStatus(newStatus),
+          'status_correct_streak': 0,
+          'updated_at': updatedAt,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
 
     final prefs = await SharedPreferences.getInstance();
     final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
@@ -1573,15 +1605,18 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'words')) {
       return;
     }
-    await db.update(
-      'words',
-      {
-        'priority_tier': tier ?? 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      final updatedAt = await _nextWordUpdatedAt(txn, id);
+      await txn.update(
+        'words',
+        {
+          'priority_tier': tier ?? 0,
+          'updated_at': updatedAt,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
   }
 
   Future<void> updateWordTierBatch(List<int> ids, int? tier) async {
@@ -1589,14 +1624,29 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'words') || ids.isEmpty) {
       return;
     }
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now();
     await db.transaction((txn) async {
+      final placeholders = List.filled(ids.length, '?').join(',');
+      final rows = await txn.query(
+        'words',
+        columns: ['id', 'updated_at'],
+        where: 'id IN ($placeholders)',
+        whereArgs: ids,
+      );
+      final currentById = <int, DateTime>{};
+      for (final row in rows) {
+        final id = row['id'] as int?;
+        if (id == null) continue;
+        currentById[id] = _parseUpdatedAt(row['updated_at']);
+      }
       for (final id in ids) {
+        final current = currentById[id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final next = now.isAfter(current) ? now : current.add(const Duration(milliseconds: 1));
         await txn.update(
           'words',
           {
             'priority_tier': tier ?? 0,
-            'updated_at': now,
+            'updated_at': next.toIso8601String(),
           },
           where: 'id = ?',
           whereArgs: [id],
@@ -1610,17 +1660,33 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'words') || ids.isEmpty) {
       return;
     }
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now();
+    final bucketDate = now.toIso8601String();
     await db.transaction((txn) async {
+      final placeholders = List.filled(ids.length, '?').join(',');
+      final rows = await txn.query(
+        'words',
+        columns: ['id', 'updated_at'],
+        where: 'id IN ($placeholders)',
+        whereArgs: ids,
+      );
+      final currentById = <int, DateTime>{};
+      for (final row in rows) {
+        final id = row['id'] as int?;
+        if (id == null) continue;
+        currentById[id] = _parseUpdatedAt(row['updated_at']);
+      }
       for (final id in ids) {
+        final current = currentById[id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final next = now.isAfter(current) ? now : current.add(const Duration(milliseconds: 1));
         await txn.update(
           'words',
           {
             'status': status,
-            'bucket_date': now,
+            'bucket_date': bucketDate,
             'next_review_date': _nextReviewDateForStatus(status),
             'status_correct_streak': 0,
-            'updated_at': now,
+            'updated_at': next.toIso8601String(),
           },
           where: 'id = ?',
           whereArgs: [id],
@@ -1638,15 +1704,18 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'words')) {
       return;
     }
-    await db.update(
-      'words',
-      {
-        'definition': definition.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      final updatedAt = await _nextWordUpdatedAt(txn, id);
+      await txn.update(
+        'words',
+        {
+          'definition': definition.trim(),
+          'updated_at': updatedAt,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
   }
 
   Future<List<String>> getDistractorsForWord(int wordId) async {
@@ -1672,8 +1741,8 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'examples')) {
       return;
     }
-    final now = DateTime.now().toIso8601String();
     await db.transaction((txn) async {
+      final updatedAt = await _nextWordUpdatedAt(txn, wordId);
       await txn.delete(
         'examples',
         where: 'word_id = ?',
@@ -1691,7 +1760,7 @@ class DatabaseHelper {
       }
       await txn.update(
         'words',
-        {'updated_at': now},
+        {'updated_at': updatedAt},
         where: 'id = ?',
         whereArgs: [wordId],
       );
@@ -1704,8 +1773,8 @@ class DatabaseHelper {
     if (!await _hasTable(db, 'distractors')) {
       return;
     }
-    final now = DateTime.now().toIso8601String();
     await db.transaction((txn) async {
+      final updatedAt = await _nextWordUpdatedAt(txn, wordId);
       await txn.delete(
         'distractors',
         where: 'word_id = ?',
@@ -1723,7 +1792,7 @@ class DatabaseHelper {
       }
       await txn.update(
         'words',
-        {'updated_at': now},
+        {'updated_at': updatedAt},
         where: 'id = ?',
         whereArgs: [wordId],
       );

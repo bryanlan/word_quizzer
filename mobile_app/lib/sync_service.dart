@@ -286,7 +286,7 @@ class SyncService {
         final server = serverByStem[stem];
         final localUpdated = _parseDateTime(local?['updated_at']?.toString());
         final serverUpdated = _parseDateTime(server?['updated_at']?.toString());
-        final useLocal = server == null || localUpdated.isAfter(serverUpdated);
+        final useLocal = server == null || !localUpdated.isBefore(serverUpdated);
 
         int localId;
         if (local != null) {
@@ -346,12 +346,22 @@ class SyncService {
           );
         }
 
-        final selectedExamples = useLocal
-            ? (localExamplesByWordId[localId] ?? [])
-            : (serverExamplesByStem[stem] ?? []);
-        final selectedDistractors = useLocal
-            ? (localDistractorsByWordId[localId] ?? [])
-            : (serverDistractorsByStem[stem] ?? []);
+        final localExamples = localExamplesByWordId[localId] ?? [];
+        final serverExamples = serverExamplesByStem[stem] ?? [];
+        final selectedExamples = localExamples.isEmpty && serverExamples.isNotEmpty
+            ? serverExamples
+            : (serverExamples.isEmpty && localExamples.isNotEmpty
+                ? localExamples
+                : (useLocal ? localExamples : serverExamples));
+
+        final localDistractors = localDistractorsByWordId[localId] ?? [];
+        final serverDistractors = serverDistractorsByStem[stem] ?? [];
+        final selectedDistractors =
+            localDistractors.isEmpty && serverDistractors.isNotEmpty
+                ? serverDistractors
+                : (serverDistractors.isEmpty && localDistractors.isNotEmpty
+                    ? localDistractors
+                    : (useLocal ? localDistractors : serverDistractors));
 
         await txn
             .delete('examples', where: 'word_id = ?', whereArgs: [localId]);
@@ -601,6 +611,7 @@ class SyncService {
         'status_correct_streak',
         'manual_flag',
         'server_word_id',
+        'updated_at',
       ],
       where: whereClause,
       whereArgs: args,
@@ -727,6 +738,7 @@ class SyncService {
         'priority_tier': row['priority_tier'],
         'status_correct_streak': row['status_correct_streak'] ?? 0,
         'manual_flag': (row['manual_flag'] == 1 || row['manual_flag'] == true),
+        'updated_at': row['updated_at'],
       };
     }).toList();
 
