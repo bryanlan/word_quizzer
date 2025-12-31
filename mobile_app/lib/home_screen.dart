@@ -13,6 +13,7 @@ import 'sync_service.dart';
 import 'pwa_update.dart';
 import 'import_kindle_screen.dart';
 import 'word_management_screen.dart';
+import 'word_packs/word_pack_browse_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -302,6 +303,11 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.library_books),
               title: const Text('Word Management'),
               onTap: () => _openDrawerRoute(const WordManagementScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_stories),
+              title: const Text('Word Packs'),
+              onTap: () => _openDrawerRoute(const WordPackBrowseScreen()),
             ),
             ListTile(
               leading: const Icon(Icons.cloud_upload),

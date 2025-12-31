@@ -1,0 +1,428 @@
+{
+  "id": "level-1-pack-2",
+  "name": "Building Blocks",
+  "difficulty_level": 1,
+  "description": "30 more essential words to strengthen your vocabulary",
+  "words": [
+    {
+      "word_stem": "aesthetic",
+      "definition": "Concerned with beauty or the appreciation of beauty.",
+      "difficulty_score": 2,
+      "examples": [
+        "The room had a modern aesthetic with clean lines.",
+        "She made aesthetic choices in decorating her home."
+      ],
+      "distractors": [
+        "Relating to athletic performance.",
+        "Concerned with ethical behavior.",
+        "Having no artistic value."
+      ]
+    },
+    {
+      "word_stem": "archaic",
+      "definition": "Very old or old-fashioned; belonging to an earlier period.",
+      "difficulty_score": 2,
+      "examples": [
+        "The archaic computer system needed updating.",
+        "Shakespeare used many archaic words."
+      ],
+      "distractors": [
+        "Modern and cutting-edge.",
+        "Related to architectural design.",
+        "Characterized by chaos."
+      ]
+    },
+    {
+      "word_stem": "brevity",
+      "definition": "Concise and exact use of words; shortness of time.",
+      "difficulty_score": 1,
+      "examples": [
+        "The brevity of his speech was appreciated.",
+        "Brevity is the soul of wit, according to Shakespeare."
+      ],
+      "distractors": [
+        "Length and wordiness.",
+        "Related to bravery.",
+        "Characterized by levity."
+      ]
+    },
+    {
+      "word_stem": "cohesive",
+      "definition": "Characterized by unity; forming a united whole.",
+      "difficulty_score": 1,
+      "examples": [
+        "The team worked together in a cohesive manner.",
+        "A cohesive argument is more persuasive."
+      ],
+      "distractors": [
+        "Fragmented and disorganized.",
+        "Related to adhesive materials.",
+        "Characterized by coercion."
+      ]
+    },
+    {
+      "word_stem": "coherent",
+      "definition": "Logical and consistent; easy to understand.",
+      "difficulty_score": 1,
+      "examples": [
+        "Her coherent explanation clarified the complex issue.",
+        "The witness gave a coherent account of events."
+      ],
+      "distractors": [
+        "Confusing and illogical.",
+        "Related to inherent properties.",
+        "Characterized by incoherence."
+      ]
+    },
+    {
+      "word_stem": "compelling",
+      "definition": "Evoking interest or attention in a powerful way.",
+      "difficulty_score": 1,
+      "examples": [
+        "The documentary presented a compelling argument.",
+        "She found his story compelling and believable."
+      ],
+      "distractors": [
+        "Boring and uninteresting.",
+        "Related to compulsion.",
+        "Characterized by repelling."
+      ]
+    },
+    {
+      "word_stem": "concise",
+      "definition": "Giving a lot of information clearly in few words.",
+      "difficulty_score": 1,
+      "examples": [
+        "Please provide a concise summary of the report.",
+        "His concise writing style saved time."
+      ],
+      "distractors": [
+        "Wordy and rambling.",
+        "Related to precision tools.",
+        "Characterized by decisiveness."
+      ]
+    },
+    {
+      "word_stem": "credible",
+      "definition": "Able to be believed; convincing.",
+      "difficulty_score": 1,
+      "examples": [
+        "The witness provided credible testimony.",
+        "Her credentials made her a credible expert."
+      ],
+      "distractors": [
+        "Unbelievable and false.",
+        "Related to credit cards.",
+        "Characterized by edibility."
+      ]
+    },
+    {
+      "word_stem": "denounce",
+      "definition": "Publicly declare to be wrong or evil.",
+      "difficulty_score": 2,
+      "examples": [
+        "The senator denounced the corrupt practices.",
+        "Many groups denounced the violence."
+      ],
+      "distractors": [
+        "Publicly praise and support.",
+        "Related to pronouncing words.",
+        "Characterized by announcing."
+      ]
+    },
+    {
+      "word_stem": "deter",
+      "definition": "Discourage someone from doing something.",
+      "difficulty_score": 2,
+      "examples": [
+        "The high cost deterred many buyers.",
+        "Security cameras deter theft."
+      ],
+      "distractors": [
+        "Encourage and promote.",
+        "Related to determining facts.",
+        "Characterized by deterioration."
+      ]
+    },
+    {
+      "word_stem": "disparity",
+      "definition": "A great difference or inequality.",
+      "difficulty_score": 2,
+      "examples": [
+        "There's a disparity between rich and poor.",
+        "The disparity in test scores was concerning."
+      ],
+      "distractors": [
+        "Equality and sameness.",
+        "Related to disparaging remarks.",
+        "Characterized by parity."
+      ]
+    },
+    {
+      "word_stem": "dubious",
+      "definition": "Hesitating or doubting; not to be relied upon.",
+      "difficulty_score": 2,
+      "examples": [
+        "I'm dubious about his ability to finish on time.",
+        "The evidence was of dubious authenticity."
+      ],
+      "distractors": [
+        "Certain and confident.",
+        "Related to double meanings.",
+        "Characterized by obviousness."
+      ]
+    },
+    {
+      "word_stem": "elusive",
+      "definition": "Difficult to find, catch, or achieve.",
+      "difficulty_score": 2,
+      "examples": [
+        "Success remained elusive despite their efforts.",
+        "The elusive criminal evaded capture for years."
+      ],
+      "distractors": [
+        "Easy to find or catch.",
+        "Related to illusions.",
+        "Characterized by exclusiveness."
+      ]
+    },
+    {
+      "word_stem": "enhance",
+      "definition": "Intensify, increase, or further improve the quality of.",
+      "difficulty_score": 1,
+      "examples": [
+        "The spices enhance the flavor of the dish.",
+        "Exercise can enhance your mood."
+      ],
+      "distractors": [
+        "Diminish or reduce.",
+        "Related to entrance ways.",
+        "Characterized by chance."
+      ]
+    },
+    {
+      "word_stem": "feasible",
+      "definition": "Possible to do easily or conveniently.",
+      "difficulty_score": 1,
+      "examples": [
+        "The project is feasible within our budget.",
+        "Is it feasible to finish by Friday?"
+      ],
+      "distractors": [
+        "Impossible or impractical.",
+        "Related to feasting.",
+        "Characterized by visibility."
+      ]
+    },
+    {
+      "word_stem": "frivolous",
+      "definition": "Not having any serious purpose or value.",
+      "difficulty_score": 2,
+      "examples": [
+        "The lawsuit was dismissed as frivolous.",
+        "She spent money on frivolous purchases."
+      ],
+      "distractors": [
+        "Serious and important.",
+        "Related to frugality.",
+        "Characterized by grievousness."
+      ]
+    },
+    {
+      "word_stem": "hypothetical",
+      "definition": "Based on a suggested idea rather than reality.",
+      "difficulty_score": 2,
+      "examples": [
+        "Let me pose a hypothetical question.",
+        "The discussion remained purely hypothetical."
+      ],
+      "distractors": [
+        "Factual and proven.",
+        "Related to hypnosis.",
+        "Characterized by theories."
+      ]
+    },
+    {
+      "word_stem": "impartial",
+      "definition": "Treating all rivals or disputants equally; fair.",
+      "difficulty_score": 1,
+      "examples": [
+        "The judge must remain impartial.",
+        "An impartial mediator helped resolve the dispute."
+      ],
+      "distractors": [
+        "Biased and unfair.",
+        "Related to partial payments.",
+        "Characterized by partiality."
+      ]
+    },
+    {
+      "word_stem": "indifferent",
+      "definition": "Having no particular interest or sympathy; unconcerned.",
+      "difficulty_score": 1,
+      "examples": [
+        "She was indifferent to his complaints.",
+        "The crowd remained indifferent to the speaker."
+      ],
+      "distractors": [
+        "Very interested and concerned.",
+        "Related to differences.",
+        "Characterized by deference."
+      ]
+    },
+    {
+      "word_stem": "innovative",
+      "definition": "Featuring new methods; advanced and original.",
+      "difficulty_score": 1,
+      "examples": [
+        "The company's innovative approach changed the industry.",
+        "She proposed an innovative solution."
+      ],
+      "distractors": [
+        "Traditional and conventional.",
+        "Related to invoices.",
+        "Characterized by renovation."
+      ]
+    },
+    {
+      "word_stem": "liable",
+      "definition": "Responsible by law; likely to do or experience something.",
+      "difficulty_score": 1,
+      "examples": [
+        "The company is liable for damages.",
+        "You're liable to catch cold in this weather."
+      ],
+      "distractors": [
+        "Not responsible or accountable.",
+        "Related to reliability.",
+        "Characterized by inability."
+      ]
+    },
+    {
+      "word_stem": "negligent",
+      "definition": "Failing to take proper care in doing something.",
+      "difficulty_score": 2,
+      "examples": [
+        "The negligent driver caused an accident.",
+        "Negligent maintenance led to the breakdown."
+      ],
+      "distractors": [
+        "Extremely careful and attentive.",
+        "Related to elegance.",
+        "Characterized by intelligence."
+      ]
+    },
+    {
+      "word_stem": "obsolete",
+      "definition": "No longer produced or used; out of date.",
+      "difficulty_score": 2,
+      "examples": [
+        "The obsolete technology was replaced.",
+        "Floppy disks are now obsolete."
+      ],
+      "distractors": [
+        "Modern and current.",
+        "Related to absolute certainty.",
+        "Characterized by solitude."
+      ]
+    },
+    {
+      "word_stem": "plausible",
+      "definition": "Seeming reasonable or probable.",
+      "difficulty_score": 1,
+      "examples": [
+        "Her explanation sounded plausible.",
+        "The theory is plausible but unproven."
+      ],
+      "distractors": [
+        "Unbelievable and unlikely.",
+        "Related to applause.",
+        "Characterized by causality."
+      ]
+    },
+    {
+      "word_stem": "prudent",
+      "definition": "Acting with or showing care and thought for the future.",
+      "difficulty_score": 2,
+      "examples": [
+        "It would be prudent to save money.",
+        "The prudent investor diversified her portfolio."
+      ],
+      "distractors": [
+        "Reckless and careless.",
+        "Related to prunes.",
+        "Characterized by students."
+      ]
+    },
+    {
+      "word_stem": "redundant",
+      "definition": "Not needed because something else serves the same purpose.",
+      "difficulty_score": 2,
+      "examples": [
+        "The safety features include redundant systems.",
+        "His explanation was redundant and repetitive."
+      ],
+      "distractors": [
+        "Essential and necessary.",
+        "Related to abundance.",
+        "Characterized by dance."
+      ]
+    },
+    {
+      "word_stem": "skeptical",
+      "definition": "Not easily convinced; having doubts or reservations.",
+      "difficulty_score": 1,
+      "examples": [
+        "I'm skeptical about his claims.",
+        "The skeptical scientist demanded more evidence."
+      ],
+      "distractors": [
+        "Completely trusting and believing.",
+        "Related to optical illusions.",
+        "Characterized by acceptance."
+      ]
+    },
+    {
+      "word_stem": "subtle",
+      "definition": "So delicate or precise as to be difficult to perceive.",
+      "difficulty_score": 2,
+      "examples": [
+        "There was a subtle difference in the colors.",
+        "Her subtle hint went unnoticed."
+      ],
+      "distractors": [
+        "Obvious and blatant.",
+        "Related to shuttles.",
+        "Characterized by brutality."
+      ]
+    },
+    {
+      "word_stem": "tangible",
+      "definition": "Perceptible by touch; clear and definite.",
+      "difficulty_score": 1,
+      "examples": [
+        "The project showed tangible results.",
+        "We need tangible evidence, not speculation."
+      ],
+      "distractors": [
+        "Intangible and abstract.",
+        "Related to tangerines.",
+        "Characterized by angles."
+      ]
+    },
+    {
+      "word_stem": "trivial",
+      "definition": "Of little value or importance.",
+      "difficulty_score": 1,
+      "examples": [
+        "Don't worry about trivial matters.",
+        "The error was trivial and easily fixed."
+      ],
+      "distractors": [
+        "Extremely important and significant.",
+        "Related to trivia games.",
+        "Characterized by arrival."
+      ]
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
+import 'db_helper.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 import 'sync_service.dart';
+import 'word_packs/difficulty_assessment_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
@@ -16,6 +18,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool isLoading = true;
   bool isAuthenticated = false;
+  bool? _needsOnboarding;
   Timer? _syncTimer;
   bool _syncInFlight = false;
   static const Duration _syncInterval = Duration(minutes: 10);
@@ -35,11 +38,35 @@ class _AuthGateState extends State<AuthGate> {
     });
     if (valid) {
       _startBackgroundSync();
+      await _checkOnboarding();
     }
     if (!mounted) return;
     setState(() {
       isLoading = false;
     });
+  }
+
+  Future<void> _checkOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
+
+    if (onboardingComplete) {
+      if (!mounted) return;
+      setState(() => _needsOnboarding = false);
+      return;
+    }
+
+    // Check if user has any words
+    try {
+      final stats = await DatabaseHelper.instance.getStats();
+      final totalWords = stats['total'] ?? 0;
+      if (!mounted) return;
+      setState(() => _needsOnboarding = totalWords == 0);
+    } catch (_) {
+      // If we can't check, assume no onboarding needed
+      if (!mounted) return;
+      setState(() => _needsOnboarding = false);
+    }
   }
 
   void _startBackgroundSync() {
@@ -100,6 +127,10 @@ class _AuthGateState extends State<AuthGate> {
     }
     if (!isAuthenticated) {
       return const LoginScreen();
+    }
+    // Show onboarding for new users with no words
+    if (_needsOnboarding == true) {
+      return const DifficultyAssessmentScreen(isOnboarding: true);
     }
     return const HomeScreen();
   }

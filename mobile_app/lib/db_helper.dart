@@ -56,6 +56,7 @@ class DatabaseHelper {
     await _ensureStatusLogSchema(db);
     await _ensureScoreLogSchema(db);
     await _ensureQuizSessionSchema(db);
+    await _ensureImportedPacksSchema(db);
     await _migratePausedStatus(db);
     _database = db;
     return _database!;
@@ -90,6 +91,7 @@ class DatabaseHelper {
     await _ensureStatusLogSchema(_database!);
     await _ensureScoreLogSchema(_database!);
     await _ensureQuizSessionSchema(_database!);
+    await _ensureImportedPacksSchema(_database!);
     await _migratePausedStatus(_database!);
   }
 
@@ -238,6 +240,17 @@ class DatabaseHelper {
         session_id TEXT PRIMARY KEY,
         started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
+      )
+    """);
+  }
+
+  Future<void> _ensureImportedPacksSchema(Database db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS imported_packs (
+        pack_id TEXT PRIMARY KEY,
+        imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        words_imported INTEGER,
+        difficulty_level INTEGER
       )
     """);
   }
@@ -2512,6 +2525,134 @@ class DatabaseHelper {
       totalAttempts: totalAttempts,
       correctAttempts: correctAttempts,
     );
+  }
+
+  // Word Pack Import Methods
+
+  /// Check if a pack has been imported
+  Future<bool> isPackImported(String packId) async {
+    final db = await database;
+    if (!await _hasTable(db, 'imported_packs')) {
+      return false;
+    }
+    final rows = await db.query(
+      'imported_packs',
+      where: 'pack_id = ?',
+      whereArgs: [packId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// Get list of all imported pack IDs
+  Future<List<String>> getImportedPackIds() async {
+    final db = await database;
+    if (!await _hasTable(db, 'imported_packs')) {
+      return [];
+    }
+    final rows = await db.query('imported_packs', columns: ['pack_id']);
+    return rows.map((r) => r['pack_id'] as String).toList();
+  }
+
+  /// Record that a pack was imported
+  Future<void> recordPackImport(
+      String packId, int wordCount, int difficultyLevel) async {
+    final db = await database;
+    await db.insert(
+      'imported_packs',
+      {
+        'pack_id': packId,
+        'words_imported': wordCount,
+        'difficulty_level': difficultyLevel,
+        'imported_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Import words from a word pack
+  /// Returns count of added and skipped words
+  Future<PackImportResult> importPackWords(List<PackWordImport> words) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return const PackImportResult(added: 0, skipped: 0);
+    }
+
+    int added = 0;
+    int skipped = 0;
+    final now = DateTime.now().toIso8601String();
+
+    await db.transaction((txn) async {
+      for (final word in words) {
+        // Check if word already exists
+        final existing = await txn.query(
+          'words',
+          columns: ['id'],
+          where: 'LOWER(word_stem) = ?',
+          whereArgs: [word.wordStem.toLowerCase()],
+          limit: 1,
+        );
+
+        if (existing.isNotEmpty) {
+          skipped++;
+          continue;
+        }
+
+        // Get first example as initial context
+        String? initialContext;
+        for (final example in word.examples) {
+          final trimmed = example.trim();
+          if (trimmed.isNotEmpty) {
+            initialContext = trimmed;
+            break;
+          }
+        }
+
+        // Insert word
+        final wordId = await txn.insert('words', {
+          'word_stem': word.wordStem,
+          'definition': word.definition,
+          'status': word.status,
+          'priority_tier': 1, // All pack words are tier 1
+          'difficulty_score': word.difficultyScore,
+          'original_context': initialContext,
+          'bucket_date': now,
+          'next_review_date': _nextReviewDateForStatus(word.status),
+          'status_correct_streak': 0,
+          'manual_flag': 0,
+          'updated_at': now,
+        });
+
+        // Insert examples
+        for (final example in word.examples) {
+          final trimmed = example.trim();
+          if (trimmed.isEmpty) continue;
+          await txn.insert('examples', {
+            'word_id': wordId,
+            'sentence': trimmed,
+          });
+        }
+
+        // Insert distractors
+        for (final distractor in word.distractors) {
+          final trimmed = distractor.trim();
+          if (trimmed.isEmpty) continue;
+          await txn.insert('distractors', {
+            'word_id': wordId,
+            'text': trimmed,
+          });
+        }
+
+        added++;
+      }
+    });
+
+    // Promote On Deck words if needed
+    final prefs = await SharedPreferences.getInstance();
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
+    await _promoteOnDeckToLearning(db, activeLearningLimit);
+
+    return PackImportResult(added: added, skipped: skipped);
   }
 }
 

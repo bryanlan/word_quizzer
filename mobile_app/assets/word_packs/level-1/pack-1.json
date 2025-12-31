@@ -1,0 +1,428 @@
+{
+  "id": "level-1-pack-1",
+  "name": "Foundations",
+  "difficulty_level": 1,
+  "description": "30 essential words for building vocabulary",
+  "words": [
+    {
+      "word_stem": "ubiquitous",
+      "definition": "Present, appearing, or found everywhere.",
+      "difficulty_score": 2,
+      "examples": [
+        "Smartphones have become ubiquitous in modern society.",
+        "The ubiquitous coffee shops made finding caffeine easy."
+      ],
+      "distractors": [
+        "Occurring only in specific locations.",
+        "Relating to urban development.",
+        "Happening at irregular intervals."
+      ]
+    },
+    {
+      "word_stem": "pragmatic",
+      "definition": "Dealing with things sensibly and realistically based on practical considerations.",
+      "difficulty_score": 2,
+      "examples": [
+        "She took a pragmatic approach to solving the budget crisis.",
+        "His pragmatic nature helped him succeed in business."
+      ],
+      "distractors": [
+        "Overly idealistic and impractical.",
+        "Related to dramatic performances.",
+        "Characterized by rigid adherence to rules."
+      ]
+    },
+    {
+      "word_stem": "benevolent",
+      "definition": "Well-meaning and kindly; showing goodwill.",
+      "difficulty_score": 2,
+      "examples": [
+        "The benevolent donor gave millions to charity.",
+        "Her benevolent smile put everyone at ease."
+      ],
+      "distractors": [
+        "Indifferent to the needs of others.",
+        "Having malicious intentions.",
+        "Excessively strict or demanding."
+      ]
+    },
+    {
+      "word_stem": "ephemeral",
+      "definition": "Lasting for a very short time.",
+      "difficulty_score": 2,
+      "examples": [
+        "The ephemeral beauty of cherry blossoms draws crowds each spring.",
+        "Fame can be ephemeral in the age of social media."
+      ],
+      "distractors": [
+        "Lasting forever or indefinitely.",
+        "Related to ethereal or spiritual matters.",
+        "Occurring in regular cycles."
+      ]
+    },
+    {
+      "word_stem": "equivocal",
+      "definition": "Open to more than one interpretation; ambiguous.",
+      "difficulty_score": 2,
+      "examples": [
+        "The politician gave an equivocal answer to avoid controversy.",
+        "The evidence was equivocal and could support either conclusion."
+      ],
+      "distractors": [
+        "Absolutely clear and definitive.",
+        "Related to mathematical equations.",
+        "Characterized by perfect balance."
+      ]
+    },
+    {
+      "word_stem": "ambivalent",
+      "definition": "Having mixed feelings or contradictory ideas about something.",
+      "difficulty_score": 1,
+      "examples": [
+        "She felt ambivalent about moving to a new city.",
+        "His ambivalent response suggested he hadn't made up his mind."
+      ],
+      "distractors": [
+        "Completely certain about a decision.",
+        "Hostile toward all options.",
+        "Unable to understand the situation."
+      ]
+    },
+    {
+      "word_stem": "eloquent",
+      "definition": "Fluent or persuasive in speaking or writing.",
+      "difficulty_score": 1,
+      "examples": [
+        "The lawyer delivered an eloquent closing argument.",
+        "Her eloquent essay moved the judges to tears."
+      ],
+      "distractors": [
+        "Speaking in a monotone voice.",
+        "Unable to express thoughts clearly.",
+        "Overly technical and jargon-filled."
+      ]
+    },
+    {
+      "word_stem": "meticulous",
+      "definition": "Showing great attention to detail; very careful and precise.",
+      "difficulty_score": 1,
+      "examples": [
+        "The meticulous accountant found every discrepancy.",
+        "She was meticulous in planning the wedding details."
+      ],
+      "distractors": [
+        "Careless and haphazard in approach.",
+        "Focused only on the big picture.",
+        "Related to metric measurements."
+      ]
+    },
+    {
+      "word_stem": "resilient",
+      "definition": "Able to recover quickly from difficulties; tough.",
+      "difficulty_score": 1,
+      "examples": [
+        "The resilient community rebuilt after the hurricane.",
+        "Children are often more resilient than adults realize."
+      ],
+      "distractors": [
+        "Easily broken or damaged.",
+        "Resistant to all forms of change.",
+        "Characterized by constant silence."
+      ]
+    },
+    {
+      "word_stem": "tenacious",
+      "definition": "Holding firmly to something; persistent and determined.",
+      "difficulty_score": 2,
+      "examples": [
+        "The tenacious reporter wouldn't give up on the story.",
+        "Her tenacious grip on the rope saved her life."
+      ],
+      "distractors": [
+        "Easily giving up when challenged.",
+        "Related to tenant housing.",
+        "Characterized by gentleness."
+      ]
+    },
+    {
+      "word_stem": "copious",
+      "definition": "Abundant in supply or quantity.",
+      "difficulty_score": 2,
+      "examples": [
+        "She took copious notes during the lecture.",
+        "The garden produced copious amounts of vegetables."
+      ],
+      "distractors": [
+        "Extremely scarce or limited.",
+        "Related to copying documents.",
+        "Having a bitter taste."
+      ]
+    },
+    {
+      "word_stem": "arduous",
+      "definition": "Involving or requiring strenuous effort; difficult and tiring.",
+      "difficulty_score": 2,
+      "examples": [
+        "The arduous climb to the summit took eight hours.",
+        "Learning a new language is an arduous but rewarding task."
+      ],
+      "distractors": [
+        "Easy and requiring little effort.",
+        "Related to artistic expression.",
+        "Characterized by boredom."
+      ]
+    },
+    {
+      "word_stem": "candid",
+      "definition": "Truthful and straightforward; frank.",
+      "difficulty_score": 1,
+      "examples": [
+        "The CEO was candid about the company's challenges.",
+        "Her candid photographs captured genuine emotions."
+      ],
+      "distractors": [
+        "Deceptive and misleading.",
+        "Related to political candidates.",
+        "Sweet like candy."
+      ]
+    },
+    {
+      "word_stem": "diligent",
+      "definition": "Having or showing care and conscientiousness in work or duties.",
+      "difficulty_score": 1,
+      "examples": [
+        "The diligent student always completed assignments early.",
+        "Diligent research uncovered the historical truth."
+      ],
+      "distractors": [
+        "Lazy and inattentive to duties.",
+        "Acting without thinking.",
+        "Related to digital technology."
+      ]
+    },
+    {
+      "word_stem": "fervent",
+      "definition": "Having or displaying passionate intensity.",
+      "difficulty_score": 2,
+      "examples": [
+        "She was a fervent supporter of environmental causes.",
+        "His fervent speech inspired the crowd."
+      ],
+      "distractors": [
+        "Lukewarm and unenthusiastic.",
+        "Related to fever or illness.",
+        "Characterized by fear."
+      ]
+    },
+    {
+      "word_stem": "gregarious",
+      "definition": "Fond of company; sociable.",
+      "difficulty_score": 2,
+      "examples": [
+        "The gregarious host made everyone feel welcome.",
+        "Dolphins are known for their gregarious behavior."
+      ],
+      "distractors": [
+        "Preferring solitude and isolation.",
+        "Related to geometric shapes.",
+        "Characterized by greed."
+      ]
+    },
+    {
+      "word_stem": "haphazard",
+      "definition": "Lacking any obvious principle of organization.",
+      "difficulty_score": 1,
+      "examples": [
+        "The books were arranged in a haphazard manner.",
+        "His haphazard approach to planning caused problems."
+      ],
+      "distractors": [
+        "Carefully organized and systematic.",
+        "Related to dangerous hazards.",
+        "Occurring in happy circumstances."
+      ]
+    },
+    {
+      "word_stem": "incessant",
+      "definition": "Continuing without pause or interruption.",
+      "difficulty_score": 2,
+      "examples": [
+        "The incessant rain lasted for three days.",
+        "Her incessant complaining annoyed everyone."
+      ],
+      "distractors": [
+        "Occurring only occasionally.",
+        "Related to incense or fragrance.",
+        "Characterized by innocence."
+      ]
+    },
+    {
+      "word_stem": "judicious",
+      "definition": "Having, showing, or done with good judgment or sense.",
+      "difficulty_score": 2,
+      "examples": [
+        "A judicious use of resources prevented waste.",
+        "The judicious manager considered all perspectives."
+      ],
+      "distractors": [
+        "Acting without thinking.",
+        "Related to the judicial system.",
+        "Characterized by prejudice."
+      ]
+    },
+    {
+      "word_stem": "lucid",
+      "definition": "Expressed clearly; easy to understand.",
+      "difficulty_score": 1,
+      "examples": [
+        "His lucid explanation made the concept clear.",
+        "She remained lucid despite her illness."
+      ],
+      "distractors": [
+        "Confusing and hard to follow.",
+        "Related to lucky events.",
+        "Characterized by darkness."
+      ]
+    },
+    {
+      "word_stem": "mundane",
+      "definition": "Lacking interest or excitement; dull and ordinary.",
+      "difficulty_score": 1,
+      "examples": [
+        "She longed for adventure to escape her mundane routine.",
+        "Even mundane tasks require attention to detail."
+      ],
+      "distractors": [
+        "Exciting and extraordinary.",
+        "Related to Monday specifically.",
+        "Characterized by mystery."
+      ]
+    },
+    {
+      "word_stem": "nonchalant",
+      "definition": "Feeling or appearing casually calm and relaxed.",
+      "difficulty_score": 2,
+      "examples": [
+        "He gave a nonchalant shrug when asked about his success.",
+        "Her nonchalant attitude hid her nervousness."
+      ],
+      "distractors": [
+        "Extremely anxious and worried.",
+        "Related to challenging situations.",
+        "Characterized by hostility."
+      ]
+    },
+    {
+      "word_stem": "obscure",
+      "definition": "Not discovered or known about; uncertain.",
+      "difficulty_score": 1,
+      "examples": [
+        "The artist remained obscure until after her death.",
+        "The meaning of the ancient text is obscure."
+      ],
+      "distractors": [
+        "Famous and well-known.",
+        "Related to security measures.",
+        "Characterized by brightness."
+      ]
+    },
+    {
+      "word_stem": "profound",
+      "definition": "Very great or intense; having deep insight.",
+      "difficulty_score": 1,
+      "examples": [
+        "The book had a profound impact on her worldview.",
+        "He made a profound observation about human nature."
+      ],
+      "distractors": [
+        "Shallow and superficial.",
+        "Related to professional work.",
+        "Characterized by profit."
+      ]
+    },
+    {
+      "word_stem": "quaint",
+      "definition": "Attractively unusual or old-fashioned.",
+      "difficulty_score": 1,
+      "examples": [
+        "The quaint village attracted many tourists.",
+        "She lived in a quaint cottage by the sea."
+      ],
+      "distractors": [
+        "Modern and cutting-edge.",
+        "Related to complaints.",
+        "Characterized by quantity."
+      ]
+    },
+    {
+      "word_stem": "robust",
+      "definition": "Strong and healthy; vigorous.",
+      "difficulty_score": 1,
+      "examples": [
+        "The robust economy showed strong growth.",
+        "Despite his age, he remained robust and active."
+      ],
+      "distractors": [
+        "Weak and fragile.",
+        "Related to robotic technology.",
+        "Characterized by rust."
+      ]
+    },
+    {
+      "word_stem": "superfluous",
+      "definition": "Unnecessary, especially through being more than enough.",
+      "difficulty_score": 2,
+      "examples": [
+        "The report contained superfluous details.",
+        "His apology seemed superfluous after her forgiveness."
+      ],
+      "distractors": [
+        "Essential and necessary.",
+        "Related to superior quality.",
+        "Characterized by fluid motion."
+      ]
+    },
+    {
+      "word_stem": "taciturn",
+      "definition": "Reserved or uncommunicative in speech; saying little.",
+      "difficulty_score": 2,
+      "examples": [
+        "The taciturn farmer spoke only when necessary.",
+        "She became taciturn after hearing the bad news."
+      ],
+      "distractors": [
+        "Talkative and outgoing.",
+        "Related to tactical strategies.",
+        "Characterized by turning movements."
+      ]
+    },
+    {
+      "word_stem": "volatile",
+      "definition": "Liable to change rapidly and unpredictably.",
+      "difficulty_score": 2,
+      "examples": [
+        "The stock market has been volatile this year.",
+        "His volatile temper made him unpredictable."
+      ],
+      "distractors": [
+        "Stable and consistent.",
+        "Related to volleyball.",
+        "Characterized by voting."
+      ]
+    },
+    {
+      "word_stem": "zealous",
+      "definition": "Having or showing great enthusiasm and energy.",
+      "difficulty_score": 2,
+      "examples": [
+        "The zealous volunteers worked through the night.",
+        "She was zealous in defending her beliefs."
+      ],
+      "distractors": [
+        "Apathetic and indifferent.",
+        "Related to zebras.",
+        "Characterized by jealousy."
+      ]
+    }
+  ]
+}
