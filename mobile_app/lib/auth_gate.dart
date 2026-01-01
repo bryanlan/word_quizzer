@@ -61,7 +61,14 @@ class _AuthGateState extends State<AuthGate> {
       final stats = await DatabaseHelper.instance.getStats();
       final totalWords = stats['total'] ?? 0;
       if (!mounted) return;
-      setState(() => _needsOnboarding = totalWords == 0);
+
+      if (totalWords > 0) {
+        // User already has words, mark onboarding as complete
+        await prefs.setBool('onboarding_complete', true);
+        setState(() => _needsOnboarding = false);
+      } else {
+        setState(() => _needsOnboarding = true);
+      }
     } catch (_) {
       // If we can't check, assume no onboarding needed
       if (!mounted) return;
