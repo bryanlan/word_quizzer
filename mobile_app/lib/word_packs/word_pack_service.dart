@@ -25,6 +25,7 @@ class WordPackService {
       return _cachedManifest!;
     } catch (e) {
       // Return empty manifest on error
+      print('ERROR loading manifest: $e');
       return const WordPackManifest(
         version: 1,
         difficultyLevels: [],

@@ -5,63 +5,63 @@
       "level": 1,
       "name": "Mid High School",
       "description": "Core vocabulary for academic success",
-      "sample_words": ["ubiquitous", "pragmatic", "benevolent", "ephemeral", "equivocal"]
+      "sample_words": ["reluctant", "inevitable", "diverse", "prominent", "significant"]
     },
     {
       "level": 2,
       "name": "Early College",
       "description": "Expanding academic and literary vocabulary",
-      "sample_words": ["obsequious", "sycophant", "parsimonious", "perspicacious", "insouciant"]
+      "sample_words": ["ubiquitous", "pragmatic", "ephemeral", "meticulous", "resilient"]
     },
     {
       "level": 3,
       "name": "College Graduate",
       "description": "Professional and sophisticated vocabulary",
-      "sample_words": ["recondite", "tendentious", "pulchritude", "sesquipedalian", "tmesis"]
+      "sample_words": ["egregious", "perfunctory", "sycophant", "taciturn", "esoteric"]
     },
     {
       "level": 4,
       "name": "Advanced / Well-Read",
       "description": "Scholarly and specialized vocabulary",
-      "sample_words": ["apophenia", "defenestration", "lacuna", "palimpsest", "simulacrum"]
+      "sample_words": ["perspicacious", "verisimilitude", "lugubrious", "zeitgeist", "schadenfreude"]
     },
     {
       "level": 5,
       "name": "Elite",
       "description": "Rare and exceptional vocabulary",
-      "sample_words": ["hapax", "zetetic", "apotropaic", "obnubilate", "ultracrepidarian"]
+      "sample_words": ["sesquipedalian", "ultracrepidarian", "tmesis", "petrichor", "pulchritude"]
     }
   ],
   "packs": [
     {
       "id": "level-1-pack-1",
-      "name": "Foundations",
+      "name": "Essential Foundations",
       "difficulty_level": 1,
-      "description": "30 essential words for building vocabulary",
+      "description": "30 essential vocabulary words every high schooler should master",
       "word_count": 30,
       "asset_path": "level-1/pack-1.json"
     },
     {
       "id": "level-1-pack-2",
-      "name": "Building Blocks",
+      "name": "Academic Building Blocks",
       "difficulty_level": 1,
-      "description": "30 more essential words to strengthen your vocabulary",
+      "description": "30 words commonly encountered in high school academics",
       "word_count": 30,
       "asset_path": "level-1/pack-2.json"
     },
     {
       "id": "level-2-pack-1",
-      "name": "Expanding Horizons",
+      "name": "College Essentials",
       "difficulty_level": 2,
-      "description": "30 words to elevate your academic writing",
+      "description": "30 words commonly encountered in college-level reading",
       "word_count": 30,
       "asset_path": "level-2/pack-1.json"
     },
     {
       "id": "level-2-pack-2",
-      "name": "Academic Edge",
+      "name": "Academic Advancement",
       "difficulty_level": 2,
-      "description": "30 advanced words for scholarly pursuits",
+      "description": "30 more words for college-level discourse",
       "word_count": 30,
       "asset_path": "level-2/pack-2.json"
     },
@@ -69,7 +69,7 @@
       "id": "level-3-pack-1",
       "name": "Professional Polish",
       "difficulty_level": 3,
-      "description": "30 sophisticated words for professional communication",
+      "description": "30 sophisticated words for educated professionals",
       "word_count": 30,
       "asset_path": "level-3/pack-1.json"
     },
@@ -77,7 +77,7 @@
       "id": "level-3-pack-2",
       "name": "Executive Vocabulary",
       "difficulty_level": 3,
-      "description": "30 sophisticated words for business and leadership",
+      "description": "30 more words for well-educated professionals",
       "word_count": 30,
       "asset_path": "level-3/pack-2.json"
     },
@@ -85,15 +85,15 @@
       "id": "level-4-pack-1",
       "name": "Scholarly Depth",
       "difficulty_level": 4,
-      "description": "30 erudite words for advanced discourse",
+      "description": "30 erudite words for serious readers and intellectuals",
       "word_count": 30,
       "asset_path": "level-4/pack-1.json"
     },
     {
       "id": "level-4-pack-2",
-      "name": "Erudite Collection",
+      "name": "Literary Excellence",
       "difficulty_level": 4,
-      "description": "30 scholarly words for intellectual discourse",
+      "description": "30 more sophisticated words for well-read individuals",
       "word_count": 30,
       "asset_path": "level-4/pack-2.json"
     },
@@ -101,15 +101,15 @@
       "id": "level-5-pack-1",
       "name": "Lexical Mastery",
       "difficulty_level": 5,
-      "description": "30 rare words for the discerning logophile",
+      "description": "30 rare words for true logophiles and word enthusiasts",
       "word_count": 30,
       "asset_path": "level-5/pack-1.json"
     },
     {
       "id": "level-5-pack-2",
-      "name": "Rarefied Words",
+      "name": "Rarefied Lexicon",
       "difficulty_level": 5,
-      "description": "30 exceptional words for the true wordsmith",
+      "description": "30 exceptional words for the most dedicated wordsmith",
       "word_count": 30,
       "asset_path": "level-5/pack-2.json"
     }

@@ -31,10 +31,14 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/word_packs/
     - assets/word_packs/manifest.json
-    - assets/word_packs/level-1/
-    - assets/word_packs/level-2/
-    - assets/word_packs/level-3/
-    - assets/word_packs/level-4/
-    - assets/word_packs/level-5/
+    - assets/word_packs/level-1/pack-1.json
+    - assets/word_packs/level-1/pack-2.json
+    - assets/word_packs/level-2/pack-1.json
+    - assets/word_packs/level-2/pack-2.json
+    - assets/word_packs/level-3/pack-1.json
+    - assets/word_packs/level-3/pack-2.json
+    - assets/word_packs/level-4/pack-1.json
+    - assets/word_packs/level-4/pack-2.json
+    - assets/word_packs/level-5/pack-1.json
+    - assets/word_packs/level-5/pack-2.json
