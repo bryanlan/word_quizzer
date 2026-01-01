@@ -37,13 +37,31 @@ class _AuthGateState extends State<AuthGate> {
       isAuthenticated = valid;
     });
     if (valid) {
-      _startBackgroundSync();
+      // Sync from server FIRST to get user's words, then check onboarding
+      await _doInitialSync();
       await _checkOnboarding();
+      _startBackgroundSync();
     }
     if (!mounted) return;
     setState(() {
       isLoading = false;
     });
+  }
+
+  Future<void> _doInitialSync() async {
+    try {
+      final token = await AuthService.getToken();
+      if (token == null || token.isEmpty) return;
+      final prefs = await SharedPreferences.getInstance();
+      final url = prefs.getString('sync_server_url') ??
+          'https://word-quizzer-api.bryanlangley.org';
+      if (url.trim().isEmpty) return;
+      final service = SyncService(baseUrl: url, token: token);
+      await service.sync();
+      await prefs.setString('last_sync_at', DateTime.now().toIso8601String());
+    } catch (_) {
+      // If sync fails, continue anyway
+    }
   }
 
   Future<void> _checkOnboarding() async {
