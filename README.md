@@ -1,27 +1,46 @@
 # Word Quizzer
 
-Offline-first vocabulary trainer with a Streamlit admin console and a Flutter Android app.
+Offline-first vocabulary trainer built around a single SQLite source of truth. Use the Streamlit admin console to import and curate words, then study daily in the Flutter Android app.
 
 ## What it does
-- Import Kindle vocab exports into a single SQLite database.
-- Triage words by status and tier, then enrich with definitions, distractors, and examples.
-- Run daily quizzes on Android with streak-based promotion rules and analytics.
+- Import Kindle `vocab.db` exports into `vocab_master.db`.
+- Rank words by priority tier and triage them by status.
+- Enrich new words with definitions, distractors, and examples.
+- Build a daily deck using spaced repetition + tiered new words.
+- Track streaks and performance analytics on-device.
+
+## Screenshots
+<table>
+  <tr>
+    <td>
+      <img src="docs/screenshots/admin-console.png" alt="Streamlit admin console" width="900">
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/screenshots/admin-grid.png" alt="Word bank grid" width="900">
+    </td>
+  </tr>
+</table>
+
+Screenshots use a small sample dataset.
+
+## Core workflow
+1. Import a Kindle `vocab.db` file.
+2. Rank words into priority tiers (1-5) and triage their learning status.
+3. Enrich new words with LLM-powered definitions, distractors, and examples.
+4. Sync `vocab_master.db` to Android and run daily quizzes.
 
 ## Repo layout
 - `desktop_admin/` Streamlit admin UI + LLM enrichment
 - `mobile_app/` Flutter Android app
 - `functional_spec.md` Product behavior and data model
 
-## Prerequisites
-- Python 3.12+
-- Flutter 3.38+
-- Android SDK (for device runs)
-
 ## Desktop admin setup
 ```bash
 cd desktop_admin
-python -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
