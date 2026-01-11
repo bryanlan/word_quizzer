@@ -5,6 +5,7 @@ import 'db_helper.dart';
 import 'models.dart';
 import 'quiz_report_screen.dart';
 import 'tts_service.dart';
+import 'word_usage_grading_service.dart';
 import 'widgets/speaker_button.dart';
 
 class QuizScreen extends StatefulWidget {
@@ -39,6 +40,10 @@ class _QuizScreenState extends State<QuizScreen> {
   Color feedbackColor = Colors.transparent;
   
   FlutterTts flutterTts = FlutterTts();
+  final TextEditingController sentenceController = TextEditingController();
+  final Map<int, String> sentenceDrafts = {};
+  final Map<int, UsageGradeResult> usageGradesByWord = {};
+  bool isGradingSentence = false;
 
   @override
   void initState() {
@@ -46,6 +51,13 @@ class _QuizScreenState extends State<QuizScreen> {
     sessionId = _createSessionId();
     _loadSession();
     _initTts();
+  }
+
+  @override
+  void dispose() {
+    sentenceController.dispose();
+    flutterTts.stop();
+    super.dispose();
   }
   
   Future<void> _initTts() async {
@@ -81,8 +93,10 @@ class _QuizScreenState extends State<QuizScreen> {
     if (sessionWords.isEmpty) return;
     final currentWord = sessionWords[currentIndex];
     final alreadyAnswered = sessionResults.containsKey(currentWord.id);
+    final usesSentenceChallenge = _usesSentenceChallenge(currentWord);
+    final usesSelfGrade = _usesSelfGrade(currentWord, usesSentenceChallenge);
     final cachedOptions = optionsByWord[currentWord.id];
-    final shouldRevealSelf = alreadyAnswered && _isSelfGraded(currentWord.status);
+    final shouldRevealSelf = alreadyAnswered && usesSelfGrade;
     setState(() {
       currentOptions = [];
       hasAnswered = alreadyAnswered;
@@ -96,6 +110,8 @@ class _QuizScreenState extends State<QuizScreen> {
       feedbackColor = Colors.transparent;
       selectedOption = selectedOptionsByWord[currentWord.id];
       contextRevealUsed[currentWord.id] = contextRevealUsed[currentWord.id] ?? false;
+      sentenceController.text = sentenceDrafts[currentWord.id] ?? '';
+      isGradingSentence = false;
     });
     final options = cachedOptions ?? await DatabaseHelper.instance.getOptionsForWord(currentWord);
     optionsByWord[currentWord.id] = options;
@@ -135,6 +151,7 @@ class _QuizScreenState extends State<QuizScreen> {
       selectedOption = selectedOptionsByWord[currentWord.id];
       feedbackMessage = null;
       feedbackColor = Colors.transparent;
+      sentenceController.text = sentenceDrafts[currentWord.id] ?? '';
     });
   }
 
@@ -309,7 +326,8 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     final currentWord = sessionWords[currentIndex];
-    final isSelfGraded = _isSelfGraded(currentWord.status);
+    final isSentenceGraded = _usesSentenceChallenge(currentWord);
+    final isSelfGraded = _usesSelfGrade(currentWord, isSentenceGraded);
 
     return WillPopScope(
       onWillPop: () async {
@@ -351,7 +369,12 @@ class _QuizScreenState extends State<QuizScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (isSelfGraded) _buildSelfGradedContext() else _buildContextSection(),
+                      if (isSentenceGraded)
+                        _buildSentenceChallengeContext()
+                      else if (isSelfGraded)
+                        _buildSelfGradedContext()
+                      else
+                        _buildContextSection(),
                       const SizedBox(height: 24),
                       LayoutBuilder(
                         builder: (context, constraints) {
@@ -404,9 +427,11 @@ class _QuizScreenState extends State<QuizScreen> {
                 child: Column(
                   children: [
                     Expanded(
-                      child: isSelfGraded
-                          ? _buildSelfGradedPanel(currentWord)
-                          : _buildOptions(currentWord),
+                      child: isSentenceGraded
+                          ? _buildSentenceChallengePanel(currentWord)
+                          : isSelfGraded
+                              ? _buildSelfGradedPanel(currentWord)
+                              : _buildOptions(currentWord),
                     ),
                     if (sessionResults.containsKey(currentWord.id))
                       Padding(
@@ -425,7 +450,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       ),
                     const SizedBox(height: 8),
                     Text(
-                      "Proficiency Level: ${currentWord.status}",
+                      "Proficiency Level: ${currentWord.status.trim()}",
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
@@ -507,6 +532,162 @@ class _QuizScreenState extends State<QuizScreen> {
       "Think of the definition, then tap Reveal.",
       textAlign: TextAlign.center,
       style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+    );
+  }
+
+  Widget _buildSentenceChallengeContext() {
+    return const Text(
+      "Use the word in a sentence, then submit for grading.",
+      textAlign: TextAlign.center,
+      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+    );
+  }
+
+  Widget _buildSentenceChallengePanel(Word currentWord) {
+    final gradeResult = usageGradesByWord[currentWord.id];
+    final gradeLabel =
+        gradeResult == null ? null : _gradeLabel(gradeResult.grade);
+    final gradeColor =
+        gradeResult == null ? null : _gradeColor(gradeResult.grade);
+    final showDetails =
+        gradeResult != null && gradeResult.grade.trim().toLowerCase() != 'easy';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxPanelHeight = constraints.maxHeight;
+        final gradeMaxHeight =
+            max(140.0, min(260.0, maxPanelHeight * 0.4));
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (gradeResult != null)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: gradeMaxHeight),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: gradeColor?.withOpacity(0.18) ?? Colors.white10,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          gradeLabel ?? '',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: gradeColor ?? Colors.white,
+                          ),
+                        ),
+                        if (gradeResult.feedback.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(gradeResult.feedback.trim()),
+                        ],
+                        if (showDetails) ...[
+                          if (gradeResult.whyWrong.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildGradeList('Why it missed', gradeResult.whyWrong),
+                          ],
+                          if (gradeResult.improvements.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildGradeList('How to improve', gradeResult.improvements),
+                          ],
+                          if (gradeResult.correctedExample.trim().isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildGradeParagraph(
+                              'Corrected example',
+                              gradeResult.correctedExample.trim(),
+                            ),
+                          ],
+                          if (gradeResult.similarExamples.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildGradeList('More examples', gradeResult.similarExamples),
+                          ],
+                          if (gradeResult.subtleties.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildGradeList('Subtleties', gradeResult.subtleties),
+                          ],
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (gradeResult != null) const SizedBox(height: 12),
+            Expanded(
+              child: TextField(
+                controller: sentenceController,
+                enabled: !hasAnswered && !isGradingSentence,
+                minLines: 3,
+                maxLines: 8,
+                decoration: InputDecoration(
+                  hintText: "Type your sentence here...",
+                  border: const OutlineInputBorder(),
+                  filled: true,
+                  fillColor: const Color(0xFF1E1E1E),
+                ),
+                onChanged: (value) {
+                  sentenceDrafts[currentWord.id] = value;
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed:
+                    (hasAnswered || isGradingSentence) ? null : () => _submitSentence(currentWord),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal,
+                  foregroundColor: Colors.white,
+                ),
+                child: isGradingSentence
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text("Submit for grading"),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGradeList(String title, List<String> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text('- $item'),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildGradeParagraph(String title, String text) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Text(text),
+      ],
     );
   }
 
@@ -618,8 +799,24 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
+  String _normalizeStatus(String status) {
+    return status.trim().toLowerCase();
+  }
+
   bool _isSelfGraded(String status) {
-    return status == 'Proficient' || status == 'Adept' || status == 'Mastered';
+    return _normalizeStatus(status) == 'proficient';
+  }
+
+  bool _usesSentenceChallenge(Word word) {
+    final status = _normalizeStatus(word.status);
+    return status == 'adept' || status == 'mastered';
+  }
+
+  bool _usesSelfGrade(Word word, bool usesSentenceChallenge) {
+    if (usesSentenceChallenge) {
+      return false;
+    }
+    return _isSelfGraded(word.status);
   }
 
   Future<void> _handleSelfGrade(String grade) async {
@@ -647,6 +844,82 @@ class _QuizScreenState extends State<QuizScreen> {
     }
     _maybeShowPromotion(currentWord.wordStem, statusChange);
     _nextWord();
+  }
+
+  Future<void> _submitSentence(Word currentWord) async {
+    if (hasAnswered || isGradingSentence) return;
+    final sentence = sentenceController.text.trim();
+    if (sentence.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a sentence first.')),
+      );
+      return;
+    }
+
+    if (!sessionStarted) {
+      await DatabaseHelper.instance.recordQuizSessionStart(sessionId);
+      sessionStarted = true;
+    }
+
+    setState(() {
+      isGradingSentence = true;
+    });
+
+    try {
+      final result = await WordUsageGradingService.gradeUsage(
+        word: currentWord.wordStem,
+        definition: currentWord.definition ?? '',
+        sentence: sentence,
+      );
+      if (!mounted) return;
+      final isCorrect = result.grade != 'failed';
+      setState(() {
+        usageGradesByWord[currentWord.id] = result;
+        sessionResults[currentWord.id] = isCorrect;
+        hasAnswered = true;
+        isGradingSentence = false;
+      });
+
+      final statusChange = await DatabaseHelper.instance.recordSentenceGrade(
+        currentWord.id,
+        result.grade,
+        sessionId: sessionId,
+      );
+      if (sessionResults.length == sessionWords.length) {
+        await DatabaseHelper.instance.recordQuizSessionComplete(sessionId);
+      }
+      _maybeShowPromotion(currentWord.wordStem, statusChange);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        isGradingSentence = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Grading failed: $e')),
+      );
+    }
+  }
+
+  String _gradeLabel(String grade) {
+    switch (grade) {
+      case 'easy':
+        return 'Correct';
+      case 'hard':
+        return 'Partially Correct';
+      default:
+        return 'Incorrect';
+    }
+  }
+
+  Color _gradeColor(String grade) {
+    switch (grade) {
+      case 'easy':
+        return Colors.green;
+      case 'hard':
+        return Colors.amber;
+      default:
+        return Colors.redAccent;
+    }
   }
 
   void _nextContext() {

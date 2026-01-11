@@ -110,6 +110,7 @@ class DatabaseHelper {
         difficulty_score INTEGER,
         priority_tier INTEGER,
         status_correct_streak INTEGER DEFAULT 0,
+        adept_streak_before_mastery INTEGER DEFAULT 0,
         manual_flag BOOLEAN DEFAULT 0,
         server_word_id INTEGER,
         updated_at TEXT
@@ -264,6 +265,8 @@ class DatabaseHelper {
     final hasPriorityTier = columns.any((c) => c['name'] == 'priority_tier');
     final hasManualFlag = columns.any((c) => c['name'] == 'manual_flag');
     final hasStreak = columns.any((c) => c['name'] == 'status_correct_streak');
+    final hasAdeptStreakBeforeMastery =
+        columns.any((c) => c['name'] == 'adept_streak_before_mastery');
     final hasServerWordId = columns.any((c) => c['name'] == 'server_word_id');
     final hasUpdatedAt = columns.any((c) => c['name'] == 'updated_at');
 
@@ -287,6 +290,10 @@ class DatabaseHelper {
         if (!hasStreak) {
           await txn.execute(
               "ALTER TABLE words ADD COLUMN status_correct_streak INTEGER DEFAULT 0");
+        }
+        if (!hasAdeptStreakBeforeMastery) {
+          await txn.execute(
+              "ALTER TABLE words ADD COLUMN adept_streak_before_mastery INTEGER DEFAULT 0");
         }
         if (!hasServerWordId) {
           await txn
@@ -318,6 +325,7 @@ class DatabaseHelper {
           difficulty_score INTEGER,
           priority_tier INTEGER,
           status_correct_streak INTEGER DEFAULT 0,
+          adept_streak_before_mastery INTEGER DEFAULT 0,
           manual_flag BOOLEAN DEFAULT 0,
           server_word_id INTEGER,
           updated_at TEXT
@@ -338,6 +346,7 @@ class DatabaseHelper {
           difficulty_score,
           priority_tier,
           status_correct_streak,
+          adept_streak_before_mastery,
           manual_flag,
           server_word_id,
           updated_at
@@ -355,6 +364,7 @@ class DatabaseHelper {
           difficulty_score,
           ${hasPriorityTier ? 'priority_tier' : 'NULL'},
           ${hasStreak ? 'status_correct_streak' : '0'},
+          ${hasAdeptStreakBeforeMastery ? 'adept_streak_before_mastery' : '0'},
           ${hasManualFlag ? 'manual_flag' : '0'},
           NULL,
           CURRENT_TIMESTAMP
@@ -819,19 +829,6 @@ class DatabaseHelper {
     }
   }
 
-  String _promoteStatus(String status) {
-    switch (status) {
-      case 'Learning':
-        return 'Proficient';
-      case 'Proficient':
-        return 'Adept';
-      case 'Adept':
-        return 'Mastered';
-      default:
-        return status;
-    }
-  }
-
   bool _isPromotion(String fromStatus, String toStatus) {
     return (fromStatus == 'Learning' && toStatus == 'Proficient') ||
         (fromStatus == 'Proficient' && toStatus == 'Adept') ||
@@ -892,7 +889,7 @@ class DatabaseHelper {
 
     final rows = await db.query(
       'words',
-      columns: ['status', 'status_correct_streak'],
+      columns: ['status', 'status_correct_streak', 'adept_streak_before_mastery'],
       where: 'id = ?',
       whereArgs: [wordId],
       limit: 1,
@@ -903,6 +900,8 @@ class DatabaseHelper {
 
     String status = rows.first['status']?.toString() ?? 'Learning';
     int streak = rows.first['status_correct_streak'] as int? ?? 0;
+    final priorAdeptStreakBeforeMastery =
+        rows.first['adept_streak_before_mastery'] as int? ?? 0;
 
     final prefs = await SharedPreferences.getInstance();
     final int learningThreshold = prefs.getInt('promote_learning_correct') ?? 3;
@@ -912,6 +911,7 @@ class DatabaseHelper {
 
     String newStatus = status;
     int newStreak = streak;
+    int newAdeptStreakBeforeMastery = priorAdeptStreakBeforeMastery;
 
     if (isCorrect) {
       if (allowStreakIncrement) {
@@ -923,8 +923,9 @@ class DatabaseHelper {
           newStatus = 'Adept';
           newStreak = 0;
         } else if (status == 'Adept' && newStreak >= adeptThreshold) {
-          newStatus = 'Mastered';
-          newStreak = 0;
+          // Adept -> Mastered promotion is gated by the sentence-usage check.
+          newStatus = 'Adept';
+          newStreak = max(0, adeptThreshold - 1);
         }
       } else {
         newStreak = streak;
@@ -939,6 +940,7 @@ class DatabaseHelper {
       {
         'status': newStatus,
         'status_correct_streak': newStreak,
+        'adept_streak_before_mastery': newAdeptStreakBeforeMastery,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
         'updated_at': await _nextWordUpdatedAt(db, wordId),
@@ -992,7 +994,7 @@ class DatabaseHelper {
 
     final rows = await db.query(
       'words',
-      columns: ['status', 'status_correct_streak'],
+      columns: ['status', 'status_correct_streak', 'adept_streak_before_mastery'],
       where: 'id = ?',
       whereArgs: [wordId],
       limit: 1,
@@ -1003,8 +1005,11 @@ class DatabaseHelper {
 
     final status = rows.first['status']?.toString() ?? 'Learning';
     final streak = rows.first['status_correct_streak'] as int? ?? 0;
+    final priorAdeptStreakBeforeMastery =
+        rows.first['adept_streak_before_mastery'] as int? ?? 0;
     String newStatus = status;
     int newStreak = streak;
+    int newAdeptStreakBeforeMastery = priorAdeptStreakBeforeMastery;
     bool isCorrect = grade != 'failed';
 
     final prefs = await SharedPreferences.getInstance();
@@ -1014,7 +1019,7 @@ class DatabaseHelper {
     final int adeptThreshold = prefs.getInt('promote_adept_correct') ?? 5;
 
     if (grade == 'failed') {
-      newStatus = 'Learning';
+      newStatus = _demoteStatus(status);
       newStreak = 0;
     } else if (grade == 'easy') {
       newStreak = streak + 1;
@@ -1025,8 +1030,9 @@ class DatabaseHelper {
         newStatus = 'Adept';
         newStreak = 0;
       } else if (status == 'Adept' && newStreak >= adeptThreshold) {
-        newStatus = 'Mastered';
-        newStreak = 0;
+        // Adept -> Mastered promotion is gated by the sentence-usage check.
+        newStatus = 'Adept';
+        newStreak = max(0, adeptThreshold - 1);
       }
     } else {
       newStreak = streak;
@@ -1037,6 +1043,7 @@ class DatabaseHelper {
       {
         'status': newStatus,
         'status_correct_streak': newStreak,
+        'adept_streak_before_mastery': newAdeptStreakBeforeMastery,
         'bucket_date': DateTime.now().toIso8601String(),
         'next_review_date': _nextReviewDateForStatus(newStatus),
         'updated_at': await _nextWordUpdatedAt(db, wordId),
@@ -1062,6 +1069,125 @@ class DatabaseHelper {
         points,
         reason: _reasonForSelfGrade(grade),
         mode: 'self_graded',
+        sessionId: sessionId,
+      );
+    }
+
+    final int activeLearningLimit = prefs.getInt('max_learning') ?? 20;
+    await _promoteOnDeckToLearning(db, activeLearningLimit);
+    if (newStatus != status) {
+      return StatusChange(
+        fromStatus: status,
+        toStatus: newStatus,
+        promoted: _isPromotion(status, newStatus),
+      );
+    }
+    return null;
+  }
+
+  Future<StatusChange?> recordSentenceGrade(
+    int wordId,
+    String grade, {
+    String? sessionId,
+  }) async {
+    final db = await database;
+    if (!await _hasTable(db, 'words')) {
+      return null;
+    }
+
+    final rows = await db.query(
+      'words',
+      columns: ['status', 'status_correct_streak', 'adept_streak_before_mastery'],
+      where: 'id = ?',
+      whereArgs: [wordId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    final status = rows.first['status']?.toString() ?? 'Learning';
+    final streak = rows.first['status_correct_streak'] as int? ?? 0;
+    final priorAdeptStreakBeforeMastery =
+        rows.first['adept_streak_before_mastery'] as int? ?? 0;
+
+    final prefs = await SharedPreferences.getInstance();
+    final int adeptThreshold = prefs.getInt('promote_adept_correct') ?? 5;
+    final int masteryGateStreak = max(0, adeptThreshold - 1);
+
+    final normalizedGrade = grade.trim().toLowerCase();
+    final isCorrect = normalizedGrade != 'failed';
+
+    String newStatus = status;
+    int newStreak = streak;
+    int newAdeptStreakBeforeMastery = priorAdeptStreakBeforeMastery;
+
+    if (status == 'Adept') {
+      if (normalizedGrade == 'failed') {
+        newStatus = 'Proficient';
+        newStreak = 0;
+      } else if (normalizedGrade == 'easy') {
+        newStreak = streak + 1;
+        if (newStreak >= adeptThreshold) {
+          newStatus = 'Mastered';
+          newAdeptStreakBeforeMastery = max(
+            priorAdeptStreakBeforeMastery,
+            masteryGateStreak,
+          );
+          newStreak = 0;
+        }
+      } else {
+        // hard -> neutral
+        newStreak = streak;
+      }
+    } else if (status == 'Mastered') {
+      if (normalizedGrade == 'easy') {
+        newStatus = 'Mastered';
+        newStreak = streak;
+      } else if (normalizedGrade == 'hard') {
+        newStatus = 'Adept';
+        newStreak = priorAdeptStreakBeforeMastery > 0
+            ? priorAdeptStreakBeforeMastery
+            : masteryGateStreak;
+      } else {
+        newStatus = 'Adept';
+        newStreak = 0;
+      }
+    } else {
+      return recordSelfGrade(wordId, normalizedGrade, sessionId: sessionId);
+    }
+
+    await db.update(
+      'words',
+      {
+        'status': newStatus,
+        'status_correct_streak': newStreak,
+        'adept_streak_before_mastery': newAdeptStreakBeforeMastery,
+        'bucket_date': DateTime.now().toIso8601String(),
+        'next_review_date': _nextReviewDateForStatus(newStatus),
+        'updated_at': await _nextWordUpdatedAt(db, wordId),
+      },
+      where: 'id = ?',
+      whereArgs: [wordId],
+    );
+
+    if (newStatus != status && await _hasTable(db, 'status_log')) {
+      await db.insert('status_log', {
+        'word_id': wordId,
+        'from_status': status,
+        'to_status': newStatus,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    }
+
+    await logResult(wordId, isCorrect, sessionId: sessionId);
+    final points = _pointsForSentenceGrade(normalizedGrade);
+    if (points > 0) {
+      await logScore(
+        wordId,
+        points,
+        reason: _reasonForSentenceGrade(normalizedGrade),
+        mode: 'sentence_usage',
         sessionId: sessionId,
       );
     }
@@ -1178,6 +1304,28 @@ class DatabaseHelper {
         return 'self_hard';
       default:
         return 'self_failed';
+    }
+  }
+
+  int _pointsForSentenceGrade(String grade) {
+    switch (grade) {
+      case 'easy':
+        return 10;
+      case 'hard':
+        return 6;
+      default:
+        return 0;
+    }
+  }
+
+  String _reasonForSentenceGrade(String grade) {
+    switch (grade) {
+      case 'easy':
+        return 'sentence_easy';
+      case 'hard':
+        return 'sentence_hard';
+      default:
+        return 'sentence_failed';
     }
   }
 

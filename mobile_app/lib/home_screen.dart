@@ -8,6 +8,7 @@ import 'word_list_screen.dart';
 import 'add_word_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'word_enrichment_service.dart';
+import 'about_screen.dart';
 import 'auth_service.dart';
 import 'sync_service.dart';
 import 'pwa_update.dart';
@@ -326,6 +327,11 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.settings),
               title: const Text('Settings'),
               onTap: () => _openDrawerRoute(const SettingsScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('About'),
+              onTap: () => _openDrawerRoute(const AboutScreen()),
             ),
           ],
         ),

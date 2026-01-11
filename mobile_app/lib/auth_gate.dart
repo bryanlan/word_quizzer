@@ -22,6 +22,8 @@ class _AuthGateState extends State<AuthGate> {
   Timer? _syncTimer;
   bool _syncInFlight = false;
   static const Duration _syncInterval = Duration(minutes: 10);
+  // Timeout for initial operations - prevents infinite spinning on iOS
+  static const Duration _initTimeout = Duration(seconds: 15);
 
   @override
   void initState() {
@@ -30,17 +32,35 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkAuth() async {
-    final token = await AuthService.getToken();
-    final valid = token != null && token.isNotEmpty && !AuthService.isTokenExpired(token);
-    if (!mounted) return;
-    setState(() {
-      isAuthenticated = valid;
-    });
-    if (valid) {
-      // Sync from server FIRST to get user's words, then check onboarding
-      await _doInitialSync();
-      await _checkOnboarding();
-      _startBackgroundSync();
+    try {
+      final token = await AuthService.getToken().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => null,
+      );
+      final valid = token != null && token.isNotEmpty && !AuthService.isTokenExpired(token);
+      if (!mounted) return;
+      setState(() {
+        isAuthenticated = valid;
+      });
+      if (valid) {
+        // Sync from server FIRST to get user's words, then check onboarding
+        // Use timeout to prevent iOS Safari hanging on database operations
+        await _doInitialSync().timeout(_initTimeout, onTimeout: () {
+          // Silently continue if sync times out - user can retry later
+        });
+        await _checkOnboarding().timeout(_initTimeout, onTimeout: () {
+          // Default to no onboarding if check times out
+          if (mounted) setState(() => _needsOnboarding = false);
+        });
+        _startBackgroundSync();
+      }
+    } catch (e) {
+      // If any error occurs during auth check, fall back to login screen
+      if (mounted) {
+        setState(() {
+          isAuthenticated = false;
+        });
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -50,33 +70,47 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _doInitialSync() async {
     try {
-      final token = await AuthService.getToken();
+      final token = await AuthService.getToken().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => null,
+      );
       if (token == null || token.isEmpty) return;
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('SharedPreferences timeout'),
+      );
       final url = prefs.getString('sync_server_url') ??
           'https://word-quizzer-api.bryanlangley.org';
       if (url.trim().isEmpty) return;
       final service = SyncService(baseUrl: url, token: token);
-      await service.sync();
+      // Allow sync up to 30 seconds before timing out
+      await service.sync().timeout(const Duration(seconds: 30));
       await prefs.setString('last_sync_at', DateTime.now().toIso8601String());
     } catch (_) {
-      // If sync fails, continue anyway
+      // If sync fails or times out, continue anyway
     }
   }
 
   Future<void> _checkOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
-
-    if (onboardingComplete) {
-      if (!mounted) return;
-      setState(() => _needsOnboarding = false);
-      return;
-    }
-
-    // Check if user has any words
     try {
-      final stats = await DatabaseHelper.instance.getStats();
+      final prefs = await SharedPreferences.getInstance().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('SharedPreferences timeout'),
+      );
+      final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
+
+      if (onboardingComplete) {
+        if (!mounted) return;
+        setState(() => _needsOnboarding = false);
+        return;
+      }
+
+      // Check if user has any words
+      // Use timeout to prevent iOS Safari hanging on database operations
+      final stats = await DatabaseHelper.instance.getStats().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => {'total': 0}, // Default to empty on timeout
+      );
       final totalWords = stats['total'] ?? 0;
       if (!mounted) return;
 
@@ -88,7 +122,7 @@ class _AuthGateState extends State<AuthGate> {
         setState(() => _needsOnboarding = true);
       }
     } catch (_) {
-      // If we can't check, assume no onboarding needed
+      // If we can't check (e.g., iOS Safari issues), assume no onboarding needed
       if (!mounted) return;
       setState(() => _needsOnboarding = false);
     }
